@@ -27,6 +27,7 @@ resource "vault_jwt_auth_backend_role" "github-admin" {
 
   bound_audiences = [format("https://github.com/%s", local.github_org)]
   bound_claims = {
+    # TODO: set the claim to whatever you like. This restricts only myself from being able to create GitHub commits/PRs that can kick off this action
     actor = "joecorall"
   }
   user_claim      = "repository"
