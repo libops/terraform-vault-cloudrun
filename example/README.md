@@ -2,10 +2,10 @@
 
 This example
 
-- Creates a Vault server in a GCP project
+- Creates a Vault server in a GCP project, deployed using Cloud Run
 - Creates a GCS bucket with a GSA in the same GCP project that can CRUD objects on the bucket
 - Configures the [GCP secret engine](https://developer.hashicorp.com/vault/docs/secrets/gcp) on the Vault server
-- Configures Vault so it can create service account keys for the GSA
+- Configures Vault so it can create service account keys for the GSA. The GSA keys have a [default ttl of 5m, and max ttl of 30d](https://github.com/joecorall/serverless-vault-with-cloud-run/blob/23e0bb6a0d378eb1612cdf8452137ce75f5fb6e6/example/main.tf#L93-L94). After their TTL they will be deleted from Google by Vault
 
 In order to both create the vault server and then apply policies to it, we need to run the terraform in two stages:
 
