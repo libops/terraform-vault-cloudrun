@@ -7,6 +7,13 @@ Fork of [kelseyhightower/serverless-vault-with-cloud-run](https://github.com/kel
 
 In your existing terraform code, add something like what's seen in [the example](./example)
 
+The GCP project needs the following non-standard APIs enabled:
+
+- Artifact Registry API
+- Cloud Run API
+- Google Cloud KMS API
+- Identity and Access Management (IAM) API
+
 ## After terraform apply
 
 ![Serverless Vault Architecture](serverless-vault.png)
@@ -60,7 +67,7 @@ We also need to set the `VAULT_TOKEN`
 ```
 gsutil cp gs://${TF_VAR_project}-key/root-token.enc . > /dev/null 2>&1
 base64 -d root-token.enc > root-token.dc
-gcloud kms decrypt --key=key --keyring=vault-server --location=global \
+gcloud kms decrypt --key=vault --keyring=vault-server --location=global \
   --project=${TF_VAR_project} \
   --ciphertext-file=root-token.dc \
   --plaintext-file=root-token

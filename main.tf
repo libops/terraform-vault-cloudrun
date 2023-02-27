@@ -13,7 +13,7 @@ terraform {
 
 locals {
   image_name = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
-  kms_keys = toset(["seal", "key"])
+  kms_key = "vault"
 }
 
 ## Create the GSA the Vault CloudRun deployment will run as
@@ -81,9 +81,7 @@ resource "google_kms_key_ring" "vault-server" {
 }
 
 resource "google_kms_crypto_key" "key" {
-  for_each = local.kms_keys
-
-  name     = each.value
+  name     = local.kms_key
   key_ring = google_kms_key_ring.vault-server.id
 
   lifecycle {
@@ -91,19 +89,14 @@ resource "google_kms_crypto_key" "key" {
   }
 }
 
-resource "google_kms_crypto_key_iam_member" "view" {
-  for_each = local.kms_keys
+resource "google_kms_crypto_key_iam_member" "vault" {
+  for_each = toset([
+    "roles/cloudkms.viewer",
+    "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  ])
 
-  crypto_key_id = google_kms_crypto_key.key[each.value].id
-  role          = "roles/cloudkms.viewer"
-  member        = format("serviceAccount:%s", google_service_account.gsa.email)
-}
-
-resource "google_kms_crypto_key_iam_member" "decrypt" {
-  for_each = local.kms_keys
-
-  crypto_key_id = google_kms_crypto_key.key[each.value].id
-  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = each.value
   member        = format("serviceAccount:%s", google_service_account.gsa.email)
 }
 
@@ -147,7 +140,7 @@ resource "google_cloud_run_v2_service" "vault" {
     }
   }
 
-  depends_on = [google_kms_crypto_key_iam_member.decrypt, docker_registry_image.vault]
+  depends_on = [google_kms_crypto_key_iam_member.vault, docker_registry_image.vault]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "member" {
@@ -184,7 +177,7 @@ resource "google_cloud_run_v2_job" "vault-init" {
         }
         env {
           name  = "KMS_KEY_ID"
-          value = google_kms_crypto_key.key["key"].id
+          value = google_kms_crypto_key.key.id
         }
         env {
           name  = "VAULT_ADDR"

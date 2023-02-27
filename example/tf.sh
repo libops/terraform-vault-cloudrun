@@ -14,7 +14,7 @@ terraform apply -target=module.vault
 # Then we fetch the token from KMS and store it in VAULT_TOKEN
 gsutil cp gs://${TF_VAR_project}-key/root-token.enc . > /dev/null 2>&1
 base64 -d root-token.enc > root-token.dc
-gcloud kms decrypt --key=key --keyring=vault-server --location=global \
+gcloud kms decrypt --key=vault --keyring=vault-server --location=global \
   --project=${TF_VAR_project} \
   --ciphertext-file=root-token.dc \
   --plaintext-file=root-token
