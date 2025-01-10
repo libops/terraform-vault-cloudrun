@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/google"
       version = "= 6.15.0"
     }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "= 6.15.0"
+    }
   }
 }
 
@@ -152,9 +156,12 @@ resource "google_cloud_run_v2_service_iam_member" "member" {
 }
 
 resource "google_cloud_run_v2_job" "vault-init" {
-  name         = "vault-init"
-  location     = var.region
-  launch_stage = "BETA"
+  provider = google-beta
+
+  name                  = "vault-init"
+  location              = var.region
+  deletion_protection   = false
+  start_execution_token = "start-once-created"
 
   template {
     template {
@@ -196,14 +203,3 @@ resource "google_cloud_run_v2_job" "vault-init" {
   }
 }
 
-# currently no way to tell terraform to immediately run the job upon creation
-# so we have to do this hack
-resource "null_resource" "init" {
-  triggers = {
-    job-ready = google_cloud_run_v2_job.vault-init.id
-  }
-
-  provisioner "local-exec" {
-    command = format("gcloud beta run jobs execute %s --project %s --region %s", google_cloud_run_v2_job.vault-init.name, var.project, var.region)
-  }
-}
