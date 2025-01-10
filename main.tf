@@ -6,14 +6,14 @@ terraform {
     }
     google = {
       source  = "hashicorp/google"
-      version = ">= 4.54.0"
+      version = "= 6.15.0"
     }
   }
 }
 
 locals {
   image_name = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
-  kms_key = "vault"
+  kms_key    = "vault"
 }
 
 ## Create the GSA the Vault CloudRun deployment will run as
@@ -51,7 +51,7 @@ resource "google_artifact_registry_repository" "private" {
 
 data "google_artifact_registry_repository" "my-repo" {
   location      = var.country
-  repository_id = var.create_repository ? google_artifact_registry_repository.private[0].id : var.repository
+  repository_id = var.repository
 }
 
 # docker build vault server image
@@ -76,8 +76,8 @@ resource "docker_registry_image" "vault" {
 
 ## Create KMS keys
 resource "google_kms_key_ring" "vault-server" {
-  name       = "vault-server"
-  location   = "global"
+  name     = "vault-server"
+  location = "global"
 }
 
 resource "google_kms_crypto_key" "key" {
@@ -161,7 +161,7 @@ resource "google_cloud_run_v2_job" "vault-init" {
       service_account = google_service_account.gsa.email
       containers {
         name  = "vault-init"
-        image = "jcorall/vault-init:0.3.0"
+        image = var.init_image
 
         env {
           name  = "GOOGLE_PROJECT"

@@ -15,6 +15,11 @@ variable "repository" {
   default     = "private"
 }
 
+variable "init_image" {
+  type    = string
+  default = "joecorall/vault-init:0.4.0"
+}
+
 variable "create_repository" {
   type        = bool
   description = "Whether or not the AR repo needs to be created by this terraform"
