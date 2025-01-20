@@ -121,7 +121,7 @@ resource "google_cloud_run_v2_service" "vault" {
     service_account                  = google_service_account.gsa.email
     containers {
       name  = "vault-server"
-      image = local.image_name
+      image   = format("%s@%s", local.image_name, docker_registry_image.vault.sha256_digest)
       ports {
         name           = "http1"
         container_port = 8200
