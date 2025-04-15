@@ -1,4 +1,4 @@
-FROM debian:bookworm@sha256:18023f131f52fc3ea21973cabffe0b216c60b417fd2478e94d9d59981ebba6af as builder
+FROM debian:bookworm@sha256:00cd074b40c4d99ff0c24540bdde0533ca3791edcdac0de36d6b9fb3260d89e2 as builder
 ARG DEBIAN_FRONTEND=noninteractive
 # renovate: datasource=github-releases depName=hashicorp-vault-cli packageName=hashicorp/vault
 ARG VAULT_VERSION=1.18.3
