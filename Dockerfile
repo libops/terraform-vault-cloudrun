@@ -1,4 +1,4 @@
-FROM debian:bookworm@sha256:d42b86d7e24d78a33edcf1ef4f65a20e34acb1e1abd53cabc3f7cdf769fc4082 as builder
+FROM debian:bookworm@sha256:b6507e340c43553136f5078284c8c68d86ec8262b1724dde73c325e8d3dcdeba as builder
 ARG DEBIAN_FRONTEND=noninteractive
 # renovate: datasource=github-releases depName=hashicorp-vault-cli packageName=hashicorp/vault
 ARG VAULT_VERSION=1.18.3
@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y wget unzip
 RUN wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
 RUN unzip vault_${VAULT_VERSION}_linux_amd64.zip
 
-FROM alpine:latest@sha256:8a1f59ffb675680d47db6337b49d22281a139e9d709335b492be023728e11715 as certs
+FROM alpine:latest@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 as certs
 RUN apk --update add ca-certificates
 
 FROM scratch
