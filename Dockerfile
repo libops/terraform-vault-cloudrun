@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y wget unzip
 RUN wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
 RUN unzip vault_${VAULT_VERSION}_linux_amd64.zip
 
-FROM alpine:latest@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 as certs
+FROM alpine:latest@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412 as certs
 RUN apk --update add ca-certificates
 
 FROM scratch
