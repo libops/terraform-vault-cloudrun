@@ -104,55 +104,39 @@ resource "google_kms_crypto_key_iam_member" "vault" {
   member        = format("serviceAccount:%s", google_service_account.gsa.email)
 }
 
-## Finally, create the Vault server
-resource "google_cloud_run_v2_service" "vault" {
-  name     = "vault-server"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+module "vault" {
+  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.3.4"
 
-  template {
-    scaling {
-      min_instance_count = 0
-      max_instance_count = 1
+  name          = "vault-server"
+  project       = var.project
+  regions       = [var.region]
+  skipNeg       = true
+  gsa           = google_service_account.gsa.email
+  min_instances = 0
+  max_instances = 1
+  containers = tolist([
+    {
+      name   = "vault",
+      image  = format("%s@%s", local.image_name, docker_registry_image.vault.sha256_digest)
+      port   = 8200
+      memory = "2Gi"
+      cpu    = "2000m"
     }
-    timeout                          = "300s"
-    max_instance_request_concurrency = 50
-    execution_environment            = "EXECUTION_ENVIRONMENT_GEN2"
-    service_account                  = google_service_account.gsa.email
-    containers {
-      name  = "vault-server"
-      image   = format("%s@%s", local.image_name, docker_registry_image.vault.sha256_digest)
-      ports {
-        name           = "http1"
-        container_port = 8200
-      }
-      env {
-        name  = "GOOGLE_PROJECT"
-        value = var.project
-      }
-      env {
-        name  = "GOOGLE_STORAGE_BUCKET"
-        value = google_storage_bucket.vault["data"].name
-      }
+  ])
 
-      resources {
-        limits = {
-          cpu    = "2"
-          memory = "2Gi"
-        }
-      }
+  addl_env_vars = tolist([
+    {
+      name  = "GOOGLE_PROJECT"
+      value = var.project
+    },
+    {
+      name  = "GOOGLE_STORAGE_BUCKET"
+      value = google_storage_bucket.vault["data"].name
     }
-  }
+  ])
+
 
   depends_on = [google_kms_crypto_key_iam_member.vault, docker_registry_image.vault]
-}
-
-resource "google_cloud_run_v2_service_iam_member" "member" {
-  project  = google_cloud_run_v2_service.vault.project
-  location = google_cloud_run_v2_service.vault.location
-  name     = google_cloud_run_v2_service.vault.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
 }
 
 resource "google_cloud_run_v2_job" "vault-init" {
@@ -162,7 +146,6 @@ resource "google_cloud_run_v2_job" "vault-init" {
   location              = var.region
   deletion_protection   = false
   start_execution_token = "start-once-created"
-
   template {
     template {
       service_account = google_service_account.gsa.email
@@ -188,7 +171,7 @@ resource "google_cloud_run_v2_job" "vault-init" {
         }
         env {
           name  = "VAULT_ADDR"
-          value = google_cloud_run_v2_service.vault.uri
+          value = module.vault.urls[var.region]
         }
         env {
           name  = "VAULT_SECRET_SHARES"

@@ -1,5 +1,5 @@
 output "vault-url" {
-  value       = google_cloud_run_v2_service.vault.uri
+  value       = module.vault.urls[var.region]
   description = "The URL to the Vault instance."
 }
 
