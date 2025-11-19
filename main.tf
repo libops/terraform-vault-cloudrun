@@ -16,8 +16,9 @@ terraform {
 }
 
 locals {
-  image_name = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
-  kms_key    = "vault"
+  image_name  = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
+  vault_proxy = "jcorall/vault-proxy:main"
+  kms_key     = "vault"
 }
 
 ## Create the GSA the Vault CloudRun deployment will run as
@@ -78,6 +79,10 @@ resource "docker_registry_image" "vault" {
   }
 }
 
+data "docker_registry_image" "vault-proxy" {
+  name = local.vault_proxy
+}
+
 ## Create KMS keys
 resource "google_kms_key_ring" "vault-server" {
   name     = "vault-server"
@@ -116,9 +121,15 @@ module "vault" {
   max_instances = 1
   containers = tolist([
     {
+      name   = "proxy",
+      image  = format("%s@%s", local.vault_proxy, data.docker_registry_image.vault-proxy.sha256_digest)
+      port   = 8080
+      memory = "512Mi"
+      cpu    = "500m"
+    },
+    {
       name   = "vault",
       image  = format("%s@%s", local.image_name, docker_registry_image.vault.sha256_digest)
-      port   = 8200
       memory = "2Gi"
       cpu    = "2000m"
     }
@@ -132,9 +143,12 @@ module "vault" {
     {
       name  = "GOOGLE_STORAGE_BUCKET"
       value = google_storage_bucket.vault["data"].name
+    },
+    {
+      name  = "VAULT_PROXY_YAML"
+      value = replace(var.vault_proxy_yaml, "__GCLOUD_PROJECT__", var.project)
     }
   ])
-
 
   depends_on = [google_kms_crypto_key_iam_member.vault, docker_registry_image.vault]
 }
