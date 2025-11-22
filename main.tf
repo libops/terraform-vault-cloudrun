@@ -15,10 +15,27 @@ terraform {
   }
 }
 
+data "google_client_openid_userinfo" "current" {}
+
 locals {
   image_name  = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
   vault_proxy = "jcorall/vault-proxy:main"
   kms_key     = "vault"
+
+  # see https://github.com/libops/vault-proxy/blob/main/config.example.yaml
+  vault_proxy_config = {
+    vault_addr = "http://127.0.0.1:8200"
+    port       = 8080
+    admin_emails = concat(
+      var.admin_emails,
+      [data.google_client_openid_userinfo.current.email]
+    )
+    public_routes = concat(
+      var.public_routes,
+      ["/v1/sys/health"] # Essential for health checks
+    )
+  }
+  vault_proxy_yaml = yamlencode(local.vault_proxy_config)
 }
 
 ## Create the GSA the Vault CloudRun deployment will run as
@@ -146,7 +163,7 @@ module "vault" {
     },
     {
       name  = "VAULT_PROXY_YAML"
-      value = replace(var.vault_proxy_yaml, "__GCLOUD_PROJECT__", var.project)
+      value = local.vault_proxy_yaml
     }
   ])
 

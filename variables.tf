@@ -31,24 +31,19 @@ variable "country" {
   default = "us"
 }
 
-# e.g. https://github.com/libops/vault-proxy/blob/main/config.example.yaml
-variable "vault_proxy_yaml" {
-  type      = string
-  sensitive = true
-  default   = <<EOT
-vault_addr: http://127.0.0.1:8200
-port: 8080
-admin_emails:
-  - joe@libops.io
-  - github@__GCLOUD_PROJECT__.iam.gserviceaccount.com
-  - vault-server@__GCLOUD_PROJECT__.iam.gserviceaccount.com
-public_routes:
-  - /.well-known/
-  - /v1/identity/oidc/
-  - /v1/auth/oidc/
-  - /v1/auth/userpass/
-  # this should always be set, as the docker healthcheck relies on it
-  # the healthcheck checks both the proxy is working and vault is unsealed
-  - /v1/sys/health
-EOT
+variable "admin_emails" {
+  description = "List of emails (users or service accounts) that are allowed to access non-public routes by passing X-Admin-Token header with a google access token."
+  type        = list(string)
+  default     = []
+}
+
+variable "public_routes" {
+  description = "List of Vault API paths that should be accessible without X-Admin-Token header."
+  type        = list(string)
+  default = [
+    "/.well-known/",
+    "/v1/identity/oidc/",
+    "/v1/auth/oidc/",
+    "/v1/auth/userpass/",
+  ]
 }
