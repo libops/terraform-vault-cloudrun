@@ -92,7 +92,7 @@ resource "docker_registry_image" "vault" {
   name       = local.image_name
   depends_on = [docker_image.vault, google_artifact_registry_repository.private]
   triggers = {
-    rebuild = docker_image.vault.image_id
+    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl"]) : filesha1(f)]))
   }
 }
 
