@@ -17,7 +17,7 @@ variable "repository" {
 
 variable "init_image" {
   type    = string
-  default = "libops/vault-init:1.0.0"
+  default = "libops/vault-init:1.0.1"
 }
 
 variable "create_repository" {
