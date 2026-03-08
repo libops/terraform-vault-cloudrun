@@ -19,8 +19,10 @@ data "google_client_openid_userinfo" "current" {}
 
 locals {
   image_name  = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
-  vault_proxy = "jcorall/vault-proxy:main"
+  vault_proxy = "libops/vault-proxy:1.0.0"
   kms_key     = "vault"
+  account_id  = "vault-server"
+  gsa         = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
 
   # see https://github.com/libops/vault-proxy/blob/main/config.example.yaml
   vault_proxy_config = {
@@ -28,7 +30,10 @@ locals {
     port       = 8080
     admin_emails = concat(
       var.admin_emails,
-      [data.google_client_openid_userinfo.current.email]
+      [
+        data.google_client_openid_userinfo.current.email,
+        local.gsa,
+      ]
     )
     public_routes = concat(
       var.public_routes,
@@ -40,7 +45,7 @@ locals {
 
 ## Create the GSA the Vault CloudRun deployment will run as
 resource "google_service_account" "gsa" {
-  account_id = "vault-server"
+  account_id = local.account_id
 }
 
 ## Create buckets to store the Vault backend (data) and root token (key)
