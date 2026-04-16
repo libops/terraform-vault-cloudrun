@@ -1,12 +1,12 @@
-FROM debian:trixie@sha256:8f6a88feef3ed01a300dafb87f208977f39dccda1fd120e878129463f7fa3b8f as builder
+FROM debian:trixie-20260406@sha256:3352c2e13876c8a5c5873ef20870e1939e73cb9a3c1aeba5e3e72172a85ce9ed as builder
 ARG DEBIAN_FRONTEND=noninteractive
 # renovate: datasource=github-releases depName=hashicorp-vault-cli packageName=hashicorp/vault
-ARG VAULT_VERSION=1.21.1
+ARG VAULT_VERSION=1.21.4
 RUN apt-get update && apt-get install -y wget unzip
 RUN wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
 RUN unzip vault_${VAULT_VERSION}_linux_amd64.zip
 
-FROM alpine:3.22@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412 as certs
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 as certs
 RUN apk --update add ca-certificates
 
 FROM scratch
