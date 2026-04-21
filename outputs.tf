@@ -9,10 +9,10 @@ output "gsa" {
 }
 
 output "key_bucket" {
-  value = google_storage_bucket.vault["key"].name
+  value = local.key_bucket_name
 }
 
 
 output "repo" {
-  value = google_artifact_registry_repository.private
+  value = var.repository
 }

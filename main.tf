@@ -18,11 +18,18 @@ terraform {
 data "google_client_openid_userinfo" "current" {}
 
 locals {
-  image_name  = format("%s-docker.pkg.dev/%s/%s/vault-server:latest", var.country, var.project, var.repository)
-  vault_proxy = "libops/vault-proxy:1.0.0"
-  kms_key     = "vault"
-  account_id  = "vault-server"
-  gsa         = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
+  service_name = trimspace(var.name)
+  image_name   = format("%s-docker.pkg.dev/%s/%s/%s:latest", var.country, var.project, var.repository, var.image_name)
+  vault_proxy  = "libops/vault-proxy:1.0.0"
+  kms_key_id   = format("projects/%s/locations/global/keyRings/%s/cryptoKeys/%s", var.project, var.kms_key_ring_name, var.kms_key_name)
+  account_id   = trimspace(var.gsa_account_id) != "" ? trimspace(var.gsa_account_id) : substr(local.service_name, 0, 30)
+  gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
+  data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
+    replace(replace(replace("${var.project}-${local.service_name}-data", "_", "-"), ".", "-"), " ", "-")
+  )
+  key_bucket_name = trimspace(var.key_bucket_name) != "" ? trimspace(var.key_bucket_name) : lower(
+    replace(replace(replace("${var.project}-${local.service_name}-key", "_", "-"), ".", "-"), " ", "-")
+  )
 
   # see https://github.com/libops/vault-proxy/blob/main/config.example.yaml
   vault_proxy_config = {
@@ -45,13 +52,18 @@ locals {
 
 ## Create the GSA the Vault CloudRun deployment will run as
 resource "google_service_account" "gsa" {
+  project    = var.project
   account_id = local.account_id
 }
 
 ## Create buckets to store the Vault backend (data) and root token (key)
 resource "google_storage_bucket" "vault" {
-  for_each                    = toset(["data", "key"])
-  name                        = format("%s-%s", var.project, each.value)
+  for_each = {
+    data = local.data_bucket_name
+    key  = local.key_bucket_name
+  }
+  project                     = var.project
+  name                        = each.value
   location                    = var.country
   force_destroy               = false
   uniform_bucket_level_access = true
@@ -71,14 +83,10 @@ resource "google_storage_bucket_iam_member" "member" {
 ## Create AR repo and push the Vault image to there, to be deployed to CloudRun
 resource "google_artifact_registry_repository" "private" {
   count         = var.create_repository ? 1 : 0
+  project       = var.project
   location      = var.country
   repository_id = var.repository
   format        = "DOCKER"
-}
-
-data "google_artifact_registry_repository" "my-repo" {
-  location      = var.country
-  repository_id = var.repository
 }
 
 # docker build vault server image
@@ -86,9 +94,13 @@ resource "docker_image" "vault" {
   name = local.image_name
   build {
     context = path.module
+    build_args = {
+      KMS_KEY_RING   = var.kms_key_ring_name
+      KMS_CRYPTO_KEY = var.kms_key_name
+    }
   }
   triggers = {
-    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl"]) : filesha1(f)]))
+    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl.tmpl"]) : filesha1(f)]))
   }
 }
 
@@ -97,7 +109,7 @@ resource "docker_registry_image" "vault" {
   name       = local.image_name
   depends_on = [docker_image.vault, google_artifact_registry_repository.private]
   triggers = {
-    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl"]) : filesha1(f)]))
+    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl.tmpl"]) : filesha1(f)]))
   }
 }
 
@@ -107,13 +119,16 @@ data "docker_registry_image" "vault-proxy" {
 
 ## Create KMS keys
 resource "google_kms_key_ring" "vault-server" {
-  name     = "vault-server"
+  count    = var.create_kms ? 1 : 0
+  project  = var.project
+  name     = var.kms_key_ring_name
   location = "global"
 }
 
 resource "google_kms_crypto_key" "key" {
-  name     = local.kms_key
-  key_ring = google_kms_key_ring.vault-server.id
+  count    = var.create_kms ? 1 : 0
+  name     = var.kms_key_name
+  key_ring = google_kms_key_ring.vault-server[0].id
 
   lifecycle {
     prevent_destroy = true
@@ -126,7 +141,7 @@ resource "google_kms_crypto_key_iam_member" "vault" {
     "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   ])
 
-  crypto_key_id = google_kms_crypto_key.key.id
+  crypto_key_id = local.kms_key_id
   role          = each.value
   member        = format("serviceAccount:%s", google_service_account.gsa.email)
 }
@@ -134,7 +149,7 @@ resource "google_kms_crypto_key_iam_member" "vault" {
 module "vault" {
   source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.5.1"
 
-  name          = "vault-server"
+  name          = local.service_name
   project       = var.project
   regions       = [var.region]
   skipNeg       = true
@@ -178,7 +193,7 @@ module "vault" {
 resource "google_cloud_run_v2_job" "vault-init" {
   provider = google-beta
 
-  name                  = "vault-init"
+  name                  = var.init_job_name
   location              = var.region
   deletion_protection   = false
   start_execution_token = "start-once-created"
@@ -203,7 +218,7 @@ resource "google_cloud_run_v2_job" "vault-init" {
         }
         env {
           name  = "KMS_KEY_ID"
-          value = google_kms_crypto_key.key.id
+          value = local.kms_key_id
         }
         env {
           name  = "VAULT_ADDR"
@@ -222,4 +237,3 @@ resource "google_cloud_run_v2_job" "vault-init" {
   }
   depends_on = [module.vault]
 }
-
