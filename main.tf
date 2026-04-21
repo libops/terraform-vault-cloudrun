@@ -132,7 +132,7 @@ resource "google_kms_crypto_key_iam_member" "vault" {
 }
 
 module "vault" {
-  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.3.4"
+  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.5.1"
 
   name          = "vault-server"
   project       = var.project
