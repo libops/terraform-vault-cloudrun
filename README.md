@@ -116,7 +116,7 @@ HA Enabled               false
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_vault"></a> [vault](#module\_vault) | git::https://github.com/libops/terraform-cloudrun-v2 | 0.3.4 |
+| <a name="module_vault"></a> [vault](#module\_vault) | git::https://github.com/libops/terraform-cloudrun-v2 | 0.5.1 |
 
 ## Resources
 
@@ -133,18 +133,26 @@ HA Enabled               false
 | [google_storage_bucket.vault](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket) | resource |
 | [google_storage_bucket_iam_member.member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_member) | resource |
 | [docker_registry_image.vault-proxy](https://registry.terraform.io/providers/kreuzwerker/docker/latest/docs/data-sources/registry_image) | data source |
-| [google_artifact_registry_repository.my-repo](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/artifact_registry_repository) | data source |
 | [google_client_openid_userinfo.current](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/client_openid_userinfo) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_project"></a> [project](#input\_project) | The GCP project to create or deploy the GCP resources into | `string` | n/a | yes |
 | <a name="input_admin_emails"></a> [admin\_emails](#input\_admin\_emails) | List of emails (users or service accounts) that are allowed to access non-public routes by passing X-Admin-Token header with a google access token. | `list(string)` | `[]` | no |
 | <a name="input_country"></a> [country](#input\_country) | n/a | `string` | `"us"` | no |
+| <a name="input_create_kms"></a> [create\_kms](#input\_create\_kms) | Whether to create the KMS key ring and crypto key. | `bool` | `true` | no |
 | <a name="input_create_repository"></a> [create\_repository](#input\_create\_repository) | Whether or not the AR repo needs to be created by this terraform | `bool` | `true` | no |
-| <a name="input_init_image"></a> [init\_image](#input\_init\_image) | n/a | `string` | `"libops/vault-init:1.0.0"` | no |
-| <a name="input_project"></a> [project](#input\_project) | The GCP project to create or deploy the GCP resources into | `string` | n/a | yes |
+| <a name="input_data_bucket_name"></a> [data\_bucket\_name](#input\_data\_bucket\_name) | Bucket name for Vault data storage. Defaults to a name derived from project and service name. | `string` | `""` | no |
+| <a name="input_gsa_account_id"></a> [gsa\_account\_id](#input\_gsa\_account\_id) | Service account id for the Vault runtime. Defaults to a truncated form of name. | `string` | `""` | no |
+| <a name="input_image_name"></a> [image\_name](#input\_image\_name) | Docker image name to push into Artifact Registry. | `string` | `"vault-server"` | no |
+| <a name="input_init_image"></a> [init\_image](#input\_init\_image) | n/a | `string` | `"libops/vault-init:1.0.1"` | no |
+| <a name="input_init_job_name"></a> [init\_job\_name](#input\_init\_job\_name) | Cloud Run job name used to initialize Vault. | `string` | `"vault-init"` | no |
+| <a name="input_key_bucket_name"></a> [key\_bucket\_name](#input\_key\_bucket\_name) | Bucket name for stored Vault init material. Defaults to a name derived from project and service name. | `string` | `""` | no |
+| <a name="input_kms_key_name"></a> [kms\_key\_name](#input\_kms\_key\_name) | KMS crypto key name used for auto-unseal. | `string` | `"vault"` | no |
+| <a name="input_kms_key_ring_name"></a> [kms\_key\_ring\_name](#input\_kms\_key\_ring\_name) | KMS key ring name used for auto-unseal. | `string` | `"vault-server"` | no |
+| <a name="input_name"></a> [name](#input\_name) | Cloud Run service name for the Vault server. | `string` | `"vault-server"` | no |
 | <a name="input_public_routes"></a> [public\_routes](#input\_public\_routes) | List of Vault API paths that should be accessible without X-Admin-Token header. | `list(string)` | <pre>[<br/>  "/.well-known/",<br/>  "/v1/identity/oidc/",<br/>  "/v1/auth/oidc/",<br/>  "/v1/auth/userpass/"<br/>]</pre> | no |
 | <a name="input_region"></a> [region](#input\_region) | The region to deploy CloudRun | `string` | `"us-east5"` | no |
 | <a name="input_repository"></a> [repository](#input\_repository) | The AR repo to create or push the vault image into | `string` | `"private"` | no |

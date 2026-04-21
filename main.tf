@@ -21,7 +21,6 @@ locals {
   service_name = trimspace(var.name)
   image_name   = format("%s-docker.pkg.dev/%s/%s/%s:latest", var.country, var.project, var.repository, var.image_name)
   vault_proxy  = "libops/vault-proxy:1.0.0"
-  kms_key_id   = format("projects/%s/locations/global/keyRings/%s/cryptoKeys/%s", var.project, var.kms_key_ring_name, var.kms_key_name)
   account_id   = trimspace(var.gsa_account_id) != "" ? trimspace(var.gsa_account_id) : substr(local.service_name, 0, 30)
   gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
   data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
@@ -133,6 +132,15 @@ resource "google_kms_crypto_key" "key" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+locals {
+  kms_key_id = var.create_kms ? google_kms_crypto_key.key[0].id : format(
+    "projects/%s/locations/global/keyRings/%s/cryptoKeys/%s",
+    var.project,
+    var.kms_key_ring_name,
+    var.kms_key_name,
+  )
 }
 
 resource "google_kms_crypto_key_iam_member" "vault" {
