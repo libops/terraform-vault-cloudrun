@@ -23,6 +23,10 @@ locals {
   vault_proxy  = "libops/vault-proxy:1.0.0"
   account_id   = trimspace(var.gsa_account_id) != "" ? trimspace(var.gsa_account_id) : substr(local.service_name, 0, 30)
   gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
+  vault_image_context_sha = sha1(join("", [
+    filesha1("${path.module}/Dockerfile"),
+    filesha1("${path.module}/vault-server.hcl.tmpl"),
+  ]))
   data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
     replace(replace(replace("${var.project}-${local.service_name}-data", "_", "-"), ".", "-"), " ", "-")
   )
@@ -91,24 +95,35 @@ resource "google_artifact_registry_repository" "private" {
 # docker build vault server image
 resource "docker_image" "vault" {
   name = local.image_name
+
   build {
-    context = path.module
+    context    = path.module
+    dockerfile = "Dockerfile"
     build_args = {
       KMS_KEY_RING   = var.kms_key_ring_name
       KMS_CRYPTO_KEY = var.kms_key_name
     }
   }
+
+  keep_locally = false
+
   triggers = {
-    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl.tmpl"]) : filesha1(f)]))
+    dir_sha = local.vault_image_context_sha
+    ring    = var.kms_key_ring_name
+    key     = var.kms_key_name
   }
 }
 
 # docker push to Artifact Registry
 resource "docker_registry_image" "vault" {
-  name       = local.image_name
-  depends_on = [docker_image.vault, google_artifact_registry_repository.private]
+  name          = docker_image.vault.name
+  keep_remotely = true
+  depends_on    = [docker_image.vault, google_artifact_registry_repository.private]
+
   triggers = {
-    dir_sha1 = sha1(join("", [for f in toset(["${path.module}/Dockerfile", "${path.module}/vault-server.hcl.tmpl"]) : filesha1(f)]))
+    dir_sha = local.vault_image_context_sha
+    ring    = var.kms_key_ring_name
+    key     = var.kms_key_name
   }
 }
 
@@ -155,7 +170,7 @@ resource "google_kms_crypto_key_iam_member" "vault" {
 }
 
 module "vault" {
-  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.5.1"
+  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.5.2"
 
   name          = local.service_name
   project       = var.project
