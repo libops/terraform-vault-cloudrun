@@ -25,6 +25,7 @@ locals {
   gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
   vault_image_context_sha = sha1(join("", [
     filesha1("${path.module}/Dockerfile"),
+    filesha1("${path.module}/docker-entrypoint.sh"),
     filesha1("${path.module}/vault-server.hcl.tmpl"),
   ]))
   data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
@@ -95,22 +96,17 @@ resource "google_artifact_registry_repository" "private" {
 # docker build vault server image
 resource "docker_image" "vault" {
   name = local.image_name
+  platform = "linux/amd64"
 
   build {
     context    = path.module
     dockerfile = "Dockerfile"
-    build_args = {
-      KMS_KEY_RING   = var.kms_key_ring_name
-      KMS_CRYPTO_KEY = var.kms_key_name
-    }
   }
 
   keep_locally = false
 
   triggers = {
     dir_sha = local.vault_image_context_sha
-    ring    = var.kms_key_ring_name
-    key     = var.kms_key_name
   }
 }
 
@@ -122,8 +118,6 @@ resource "docker_registry_image" "vault" {
 
   triggers = {
     dir_sha = local.vault_image_context_sha
-    ring    = var.kms_key_ring_name
-    key     = var.kms_key_name
   }
 }
 
@@ -199,6 +193,14 @@ module "vault" {
     {
       name  = "GOOGLE_PROJECT"
       value = var.project
+    },
+    {
+      name  = "KMS_KEY_RING"
+      value = var.kms_key_ring_name
+    },
+    {
+      name  = "KMS_CRYPTO_KEY"
+      value = var.kms_key_name
     },
     {
       name  = "GOOGLE_STORAGE_BUCKET"

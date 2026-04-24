@@ -6,20 +6,11 @@ RUN apt-get update && apt-get install -y wget unzip
 RUN wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
 RUN unzip vault_${VAULT_VERSION}_linux_amd64.zip
 
-FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 as config
-ARG KMS_KEY_RING=vault-server
-ARG KMS_CRYPTO_KEY=vault
-COPY vault-server.hcl.tmpl /tmp/vault-server.hcl.tmpl
-RUN sed \
-  -e "s/__KMS_KEY_RING__/${KMS_KEY_RING}/g" \
-  -e "s/__KMS_CRYPTO_KEY__/${KMS_CRYPTO_KEY}/g" \
-  /tmp/vault-server.hcl.tmpl > /tmp/config.hcl
-
-FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 as certs
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 RUN apk --update add ca-certificates
-
-FROM scratch
-COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN mkdir -p /etc/vault
 COPY --from=builder /vault .
-COPY --from=config /tmp/config.hcl /etc/vault/config.hcl
-ENTRYPOINT ["/vault", "server", "-config", "/etc/vault/config.hcl"]
+COPY vault-server.hcl.tmpl /etc/vault/config.hcl.tmpl
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]

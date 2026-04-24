@@ -20,6 +20,14 @@ The GCP project needs the following non-standard APIs enabled:
 
 After this module has been ran, the Vault server is up and running and has been initialized. The root token is encrypted in a GCS bucket.
 
+The Vault image now renders its seal config at container startup from the
+runtime `KMS_KEY_RING` and `KMS_CRYPTO_KEY` environment variables. That keeps
+the KMS binding out of the built image so multiple environments can safely
+share the same module code and repository without image-content drift.
+The module also forces the Vault image build to `linux/amd64` so Cloud Run
+always receives a compatible image even when Terraform runs from Apple Silicon
+or another non-amd64 host.
+
 If you list the GCS storage bucket you will see a new set of directories created by Vault:
 
 ```
@@ -116,7 +124,7 @@ HA Enabled               false
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_vault"></a> [vault](#module\_vault) | git::https://github.com/libops/terraform-cloudrun-v2 | 0.5.1 |
+| <a name="module_vault"></a> [vault](#module\_vault) | git::https://github.com/libops/terraform-cloudrun-v2 | 0.5.2 |
 
 ## Resources
 
