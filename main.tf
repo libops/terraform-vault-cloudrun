@@ -20,7 +20,6 @@ data "google_client_openid_userinfo" "current" {}
 locals {
   service_name = trimspace(var.name)
   image_name   = format("%s-docker.pkg.dev/%s/%s/%s:latest", var.country, var.project, var.repository, var.image_name)
-  vault_proxy  = "libops/vault-proxy:1.0.0"
   account_id   = trimspace(var.gsa_account_id) != "" ? trimspace(var.gsa_account_id) : substr(local.service_name, 0, 30)
   gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
   vault_image_context_sha = sha1(join("", [
@@ -121,10 +120,6 @@ resource "docker_registry_image" "vault" {
   }
 }
 
-data "docker_registry_image" "vault-proxy" {
-  name = local.vault_proxy
-}
-
 ## Create KMS keys
 resource "google_kms_key_ring" "vault-server" {
   count    = var.create_kms ? 1 : 0
@@ -176,7 +171,7 @@ module "vault" {
   containers = tolist([
     {
       name   = "proxy",
-      image  = format("%s@%s", local.vault_proxy, data.docker_registry_image.vault-proxy.sha256_digest)
+      image  = "libops/vault-proxy:1.0.1@sha256:515910b8208d82376b8973c6ae26d14ce6f56f8935547f69057dd82d2fa50c2f"
       port   = 8080
       memory = "512Mi"
       cpu    = "500m"
