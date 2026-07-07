@@ -1,9 +1,5 @@
 terraform {
   required_providers {
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = ">= 3.0.1"
-    }
     google = {
       source  = "hashicorp/google"
       version = ">= 7.22.0"
@@ -19,14 +15,8 @@ data "google_client_openid_userinfo" "current" {}
 
 locals {
   service_name = trimspace(var.name)
-  image_name   = format("%s-docker.pkg.dev/%s/%s/%s:latest", var.country, var.project, var.repository, var.image_name)
   account_id   = trimspace(var.gsa_account_id) != "" ? trimspace(var.gsa_account_id) : substr(local.service_name, 0, 30)
   gsa          = "${local.account_id}@${var.project}.iam.gserviceaccount.com"
-  vault_image_context_sha = sha1(join("", [
-    filesha1("${path.module}/Dockerfile"),
-    filesha1("${path.module}/docker-entrypoint.sh"),
-    filesha1("${path.module}/vault-server.hcl.tmpl"),
-  ]))
   data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
     replace(replace(replace("${var.project}-${local.service_name}-data", "_", "-"), ".", "-"), " ", "-")
   )
@@ -83,43 +73,6 @@ resource "google_storage_bucket_iam_member" "member" {
   member = format("serviceAccount:%s", google_service_account.gsa.email)
 }
 
-## Create AR repo and push the Vault image to there, to be deployed to CloudRun
-resource "google_artifact_registry_repository" "private" {
-  count         = var.create_repository ? 1 : 0
-  project       = var.project
-  location      = var.country
-  repository_id = var.repository
-  format        = "DOCKER"
-}
-
-# docker build vault server image
-resource "docker_image" "vault" {
-  name = local.image_name
-  platform = "linux/amd64"
-
-  build {
-    context    = path.module
-    dockerfile = "Dockerfile"
-  }
-
-  keep_locally = false
-
-  triggers = {
-    dir_sha = local.vault_image_context_sha
-  }
-}
-
-# docker push to Artifact Registry
-resource "docker_registry_image" "vault" {
-  name          = docker_image.vault.name
-  keep_remotely = true
-  depends_on    = [docker_image.vault, google_artifact_registry_repository.private]
-
-  triggers = {
-    dir_sha = local.vault_image_context_sha
-  }
-}
-
 ## Create KMS keys
 resource "google_kms_key_ring" "vault-server" {
   count    = var.create_kms ? 1 : 0
@@ -159,7 +112,7 @@ resource "google_kms_crypto_key_iam_member" "vault" {
 }
 
 module "vault" {
-  source = "git::https://github.com/libops/terraform-cloudrun-v2?ref=0.5.2"
+  source = "https://github.com/libops/terraform-cloudrun-v2/archive/refs/tags/0.5.2.zip//terraform-cloudrun-v2-0.5.2"
 
   name          = local.service_name
   project       = var.project
@@ -178,7 +131,7 @@ module "vault" {
     },
     {
       name   = "vault",
-      image  = format("%s@%s", local.image_name, docker_registry_image.vault.sha256_digest)
+      image  = var.vault_image
       memory = "2Gi"
       cpu    = "2000m"
     }
@@ -207,13 +160,14 @@ module "vault" {
     }
   ])
 
-  depends_on = [google_kms_crypto_key_iam_member.vault, docker_registry_image.vault]
+  depends_on = [google_kms_crypto_key_iam_member.vault]
 }
 
 resource "google_cloud_run_v2_job" "vault-init" {
   provider = google-beta
 
   name                  = var.init_job_name
+  project               = var.project
   location              = var.region
   deletion_protection   = false
   start_execution_token = "start-once-created"

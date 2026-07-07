@@ -11,8 +11,3 @@ output "gsa" {
 output "key_bucket" {
   value = local.key_bucket_name
 }
-
-
-output "repo" {
-  value = var.repository
-}

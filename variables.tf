@@ -27,27 +27,19 @@ variable "init_job_name" {
   default     = "vault-init"
 }
 
-variable "repository" {
+variable "vault_image" {
   type        = string
-  description = "The AR repo to create or push the vault image into"
-  default     = "private"
-}
+  description = "Pinned Vault server image ref used for the Vault Cloud Run container."
 
-variable "image_name" {
-  type        = string
-  description = "Docker image name to push into Artifact Registry."
-  default     = "vault-server"
+  validation {
+    condition     = var.vault_image != "" && can(regex("@sha256:[0-9a-f]{64}$", var.vault_image))
+    error_message = "vault_image must be set and pinned to a sha256 digest."
+  }
 }
 
 variable "init_image" {
   type    = string
   default = "libops/vault-init:1.0.1"
-}
-
-variable "create_repository" {
-  type        = bool
-  description = "Whether or not the AR repo needs to be created by this terraform"
-  default     = true
 }
 
 variable "country" {
