@@ -22,9 +22,38 @@ After this module has been ran, the Vault server is up and running and has been 
 Pass a pinned `vault_image` digest to deploy the Vault server container. The
 module no longer builds or pushes Docker images during Terraform runs, so it
 can run from Cloud Run jobs and other environments without Docker daemon access.
-The included Dockerfile still builds a universal Vault image that renders its
-seal config at container startup from the runtime `KMS_KEY_RING` and
-`KMS_CRYPTO_KEY` environment variables.
+The included Dockerfile builds the independently released, multi-platform
+`vault-server` image. It checks out the exact upstream Vault 2.0.3 commit and
+rebuilds the official UI-enabled target with a digest-pinned patched Go
+toolchain before copying only the binary and license into the runtime. This
+avoids inheriting vulnerabilities from an older upstream compiler while
+preserving the reviewed Vault source identity. The runtime uses a numeric
+non-root identity and renders its seal config at startup from the
+`KMS_KEY_RING` and `KMS_CRYPTO_KEY` environment variables.
+
+Image publication is intentionally separate from module releases and ordinary
+API image bundles. A change to the Dockerfile, entrypoint, config template, or
+image workflow is built and scanned without credentials in pull requests. Once
+the exact commit passes the protected main CI workflow, the shared LibOps image
+publisher signs the same multi-platform manifest in GHCR and
+`us-docker.pkg.dev/libops-images/public`. Image tags include the upstream Vault
+version, the LibOps packaging revision, the exact source commit, and the
+publication run. Every publication therefore receives a unique tag;
+deployments must still use the verified digest.
+
+Pull requests that change the image or its CI trust anchor must retain
+`[skip-release]` in the title, including after title edits, so an image-only
+change cannot cut a Terraform module release. The release workflow also
+classifies the merged PR file list and refuses a module release whenever image
+or image-trust files changed, so the title marker is not the sole enforcement
+boundary. Completed CI runs that are not a successful push from this
+repository's current `main` branch are treated as intentional publication
+no-ops.
+
+The `Terraform CI` workflow at `.github/workflows/lint-test.yml` is part of the
+publisher identity and event trust boundary. Keep its name, path, protected-main
+push trigger, and image-contract validation synchronized with the image
+workflow and shared WIF configuration.
 
 If you list the GCS storage bucket you will see a new set of directories created by Vault:
 
@@ -55,7 +84,7 @@ You can also use the `vault` command line tool as described in the next section.
 ```
 $ vault version
 
-Vault v1.12.3 (209b3dd99fe8ca320340d08c70cff5f620261f9b), built 2023-02-02T09:07:27Z
+Vault v2.0.3
 ```
 
 Configure the vault CLI to use the `vault-server` Cloud Run service URL by setting the `VAULT_ADDR` environment variable:
@@ -93,8 +122,7 @@ Initialized              true
 Sealed                   false
 Total Recovery Shares    1
 Threshold                1
-Version                  1.12.3
-Build Date               2023-02-02T09:07:27Z
+Version                  2.0.3
 Storage Type             gcs
 Cluster Name             vault-cluster-XXXXXXXX
 Cluster ID               XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
@@ -105,27 +133,28 @@ HA Enabled               false
 ## Requirements
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.7.0, < 2.0.0 |
 | <a name="requirement_google"></a> [google](#requirement\_google) | >= 7.22.0 |
 | <a name="requirement_google-beta"></a> [google-beta](#requirement\_google-beta) | >= 7.22.0 |
 
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_google"></a> [google](#provider\_google) | >= 7.22.0 |
 | <a name="provider_google-beta"></a> [google-beta](#provider\_google-beta) | >= 7.22.0 |
 
 ## Modules
 
 | Name | Source | Version |
-| ---- | ------ | ------- |
+|------|--------|---------|
 | <a name="module_vault"></a> [vault](#module\_vault) | https://github.com/libops/terraform-cloudrun-v2/archive/refs/tags/0.5.2.zip//terraform-cloudrun-v2-0.5.2 | n/a |
 
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [google-beta_google_cloud_run_v2_job.vault-init](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/google_cloud_run_v2_job) | resource |
 | [google_kms_crypto_key.key](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key) | resource |
 | [google_kms_crypto_key_iam_member.vault](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key_iam_member) | resource |
@@ -138,9 +167,7 @@ HA Enabled               false
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
-| <a name="input_project"></a> [project](#input\_project) | The GCP project to create or deploy the GCP resources into | `string` | n/a | yes |
-| <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Pinned Vault server image ref used for the Vault Cloud Run container. | `string` | n/a | yes |
+|------|-------------|------|---------|:--------:|
 | <a name="input_admin_emails"></a> [admin\_emails](#input\_admin\_emails) | List of emails (users or service accounts) that are allowed to access non-public routes by passing X-Admin-Token header with a google access token. | `list(string)` | `[]` | no |
 | <a name="input_country"></a> [country](#input\_country) | n/a | `string` | `"us"` | no |
 | <a name="input_create_kms"></a> [create\_kms](#input\_create\_kms) | Whether to create the KMS key ring and crypto key. | `bool` | `true` | no |
@@ -152,13 +179,15 @@ HA Enabled               false
 | <a name="input_kms_key_name"></a> [kms\_key\_name](#input\_kms\_key\_name) | KMS crypto key name used for auto-unseal. | `string` | `"vault"` | no |
 | <a name="input_kms_key_ring_name"></a> [kms\_key\_ring\_name](#input\_kms\_key\_ring\_name) | KMS key ring name used for auto-unseal. | `string` | `"vault-server"` | no |
 | <a name="input_name"></a> [name](#input\_name) | Cloud Run service name for the Vault server. | `string` | `"vault-server"` | no |
+| <a name="input_project"></a> [project](#input\_project) | The GCP project to create or deploy the GCP resources into | `string` | n/a | yes |
 | <a name="input_public_routes"></a> [public\_routes](#input\_public\_routes) | List of Vault API paths that should be accessible without X-Admin-Token header. | `list(string)` | <pre>[<br/>  "/.well-known/",<br/>  "/v1/identity/oidc/",<br/>  "/v1/auth/oidc/",<br/>  "/v1/auth/userpass/"<br/>]</pre> | no |
 | <a name="input_region"></a> [region](#input\_region) | The region to deploy CloudRun | `string` | `"us-east5"` | no |
+| <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Pinned Vault server image ref used for the Vault Cloud Run container. | `string` | n/a | yes |
 
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_gsa"></a> [gsa](#output\_gsa) | The GSA the Vault instance runs as. |
 | <a name="output_key_bucket"></a> [key\_bucket](#output\_key\_bucket) | n/a |
 | <a name="output_vault-url"></a> [vault-url](#output\_vault-url) | The URL to the Vault instance. |

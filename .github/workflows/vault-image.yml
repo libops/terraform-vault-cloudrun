@@ -1,0 +1,277 @@
+name: Vault image
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+    paths:
+      - Dockerfile
+      - docker-entrypoint.sh
+      - vault-server.hcl.tmpl
+      - scripts/check-vault-image-contract.sh
+      - .github/workflows/lint-test.yml
+      - .github/workflows/vault-image.yml
+  workflow_run:
+    workflows:
+      - Terraform CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vault-image-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    name: Image contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate image publication contract
+        run: bash scripts/check-vault-image-contract.sh
+
+      - name: Require image and module release separation
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_TITLE" == *"[skip-release]"* ]] || {
+            echo "Vault image changes require [skip-release] so they cannot release the Terraform module" >&2
+            exit 1
+          }
+
+  build:
+    name: Build and scan / ${{ matrix.architecture.platform }}
+    if: github.event_name == 'pull_request'
+    needs: contract
+    runs-on: ${{ matrix.architecture.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            suffix: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            suffix: arm64
+    env:
+      LOCAL_IMAGE: libops-ci/vault-server:${{ github.sha }}-${{ matrix.architecture.suffix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - name: Build native image without publisher credentials
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          platforms: ${{ matrix.architecture.platform }}
+          provenance: false
+          push: false
+          tags: ${{ env.LOCAL_IMAGE }}
+
+      - name: Verify Vault version and runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_tag="$(bash scripts/check-vault-image-contract.sh --print-tag)"
+          vault_version="${image_tag%%-libops.*}"
+          docker run --rm --entrypoint /usr/local/bin/vault "$LOCAL_IMAGE" version |
+            grep -F "Vault v${vault_version}"
+          test "$(docker run --rm --entrypoint /bin/sh "$LOCAL_IMAGE" -c 'id -u')" = 65532
+          docker run --rm \
+            -e KMS_KEY_RING='ring-one' \
+            -e KMS_CRYPTO_KEY='key_two' \
+            "$LOCAL_IMAGE" \
+            /bin/sh -ec '
+              test -r /tmp/vault-config.hcl
+              grep -F "key_ring   = \"ring-one\"" /tmp/vault-config.hcl
+              grep -F "crypto_key = \"key_two\"" /tmp/vault-config.hcl
+              test "$(stat -c %a /tmp/vault-config.hcl)" = 600
+            '
+          if docker run --rm \
+            -e KMS_KEY_RING='ring&one' \
+            -e KMS_CRYPTO_KEY='key-two' \
+            "$LOCAL_IMAGE" true; then
+            echo "Malformed KMS resource name unexpectedly reached Vault" >&2
+            exit 1
+          fi
+          if docker run --rm \
+            -e KMS_KEY_RING='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+            -e KMS_CRYPTO_KEY='key-two' \
+            "$LOCAL_IMAGE" true; then
+            echo "Oversized KMS resource name unexpectedly reached Vault" >&2
+            exit 1
+          fi
+
+      - name: Scan native image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+
+  authorize:
+    name: Classify and authorize post-CI image commit
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.eligibility.outputs.eligible }}
+      image-tag: ${{ steps.image.outputs.tag }}
+    env:
+      PUBLISH_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Classify triggering workflow
+        id: eligibility
+        env:
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_EVENT: ${{ github.event.workflow_run.event }}
+          CI_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CI_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          CI_WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
+        run: |
+          set -euo pipefail
+          eligible=false
+          if [[ "$CI_CONCLUSION" == success &&
+                "$CI_EVENT" == push &&
+                "$CI_HEAD_BRANCH" == main &&
+                "$CI_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" &&
+                "$CI_WORKFLOW_PATH" == .github/workflows/lint-test.yml ]]; then
+            eligible=true
+          fi
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact CI commit
+        if: steps.eligibility.outputs.eligible == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Require successful CI for the current main commit
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_EVENT: ${{ github.event.workflow_run.event }}
+          CI_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CI_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          CI_WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$CI_CONCLUSION" = success
+          test "$CI_EVENT" = push
+          test "$CI_HEAD_BRANCH" = main
+          test "$CI_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          test "$CI_WORKFLOW_PATH" = .github/workflows/lint-test.yml
+          [[ "$PUBLISH_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$PUBLISH_SHA"
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$PUBLISH_SHA"
+
+      - name: Resolve immutable image metadata
+        id: image
+        if: steps.eligibility.outputs.eligible == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/check-vault-image-contract.sh
+          base_tag="$(bash scripts/check-vault-image-contract.sh --print-tag)"
+          image_tag="${base_tag}-sha-${PUBLISH_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          [[ "${#image_tag}" -le 128 ]]
+          echo "tag=$image_tag" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish Vault / GHCR and GAR
+    if: needs.authorize.outputs.eligible == 'true'
+    needs: authorize
+    uses: libops/.github/.github/workflows/build-push.yaml@578137212ead4ab4059e95df17fa30e9b7ac4aed
+    with:
+      image: vault-server
+      ref: ${{ github.event.workflow_run.head_sha }}
+      tag: ${{ needs.authorize.outputs.image-tag }}
+      expected-main-sha: ${{ github.event.workflow_run.head_sha }}
+      additional-gar-registry: us-docker.pkg.dev/libops-images/public
+      scan: true
+      sign: true
+      certificate-identity: https://github.com/libops/.github/.github/workflows/build-push.yaml@578137212ead4ab4059e95df17fa30e9b7ac4aed
+    secrets:
+      GCLOUD_OIDC_POOL: ${{ secrets.GCLOUD_OIDC_POOL }}
+      GSA: ${{ secrets.GSA }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+  required:
+    name: Vault image / required
+    if: always()
+    needs:
+      - contract
+      - build
+      - authorize
+      - publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require event-specific image jobs
+        env:
+          AUTHORIZE_RESULT: ${{ needs.authorize.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          CONTRACT_RESULT: ${{ needs.contract.result }}
+          ELIGIBLE_WORKFLOW_RUN: ${{ needs.authorize.outputs.eligible }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              test "$CONTRACT_RESULT" = success
+              test "$BUILD_RESULT" = success
+              test "$AUTHORIZE_RESULT" = skipped
+              test "$PUBLISH_RESULT" = skipped
+              ;;
+            workflow_run)
+              test "$CONTRACT_RESULT" = skipped
+              test "$BUILD_RESULT" = skipped
+              test "$AUTHORIZE_RESULT" = success
+              if [[ "$ELIGIBLE_WORKFLOW_RUN" == true ]]; then
+                test "$PUBLISH_RESULT" = success
+              else
+                test "$PUBLISH_RESULT" = skipped
+              fi
+              ;;
+            *)
+              printf 'Unsupported event: %s\n' "$EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
