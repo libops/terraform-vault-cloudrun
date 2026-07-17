@@ -41,14 +41,14 @@ version, the LibOps packaging revision, the exact source commit, and the
 publication run. Every publication therefore receives a unique tag;
 deployments must still use the verified digest.
 
-Pull requests that change the image or its CI trust anchor must retain
-`[skip-release]` in the title, including after title edits, so an image-only
-change cannot cut a Terraform module release. The release workflow also
-classifies the merged PR file list and refuses a module release whenever image
-or image-trust files changed, so the title marker is not the sole enforcement
-boundary. Completed CI runs that are not a successful push from this
-repository's current `main` branch are treated as intentional publication
-no-ops.
+Image payload pull requests and image-trust-only pull requests must retain
+`[skip-release]` in the title, including after title edits, so they cannot cut a
+Terraform module release. A pull request that changes both module payload and
+image trust must carry an explicit release marker. The release workflow also
+classifies the merged PR file list and suppresses unmarked image/trust-only
+changes, so the title marker is not the sole enforcement boundary. Completed CI
+runs that are not a successful push from this repository's current `main`
+branch are treated as intentional publication no-ops.
 
 The `Terraform CI` workflow at `.github/workflows/lint-test.yml` is part of the
 publisher identity and event trust boundary. Keep its name, path, protected-main

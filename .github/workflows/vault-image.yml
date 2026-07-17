@@ -13,6 +13,7 @@ on:
       - vault-server.hcl.tmpl
       - scripts/check-vault-image-contract.sh
       - .github/workflows/lint-test.yml
+      - .github/workflows/release.yml
       - .github/workflows/vault-image.yml
   workflow_run:
     workflows:
@@ -35,6 +36,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -46,13 +50,47 @@ jobs:
 
       - name: Require image and module release separation
         env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
-          [[ "$PR_TITLE" == *"[skip-release]"* ]] || {
-            echo "Vault image changes require [skip-release] so they cannot release the Terraform module" >&2
-            exit 1
-          }
+          image_payload_changed=false
+          image_trust_changed=false
+          module_payload_changed=false
+          changed_files="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)'
+          )"
+          while IFS= read -r changed_file; do
+            case "$changed_file" in
+              Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/vault-image.yml)
+                image_payload_changed=true
+                ;;
+              .github/workflows/lint-test.yml|.github/workflows/release.yml)
+                image_trust_changed=true
+                ;;
+              *.tf|.terraform.lock.hcl|Makefile|UPGRADING.md|examples/*|modules/*|tests/*)
+                module_payload_changed=true
+                ;;
+            esac
+          done <<< "$changed_files"
+          if [[ "$image_payload_changed" == true ||
+                "$image_trust_changed" == true && "$module_payload_changed" == false ]]; then
+            [[ "$PR_TITLE" == *"[skip-release]"* ]] || {
+              echo "Vault image changes require [skip-release] so they cannot release the Terraform module" >&2
+              exit 1
+            }
+          elif [[ "$image_trust_changed" == true ]]; then
+            [[ "$PR_TITLE" == *"[major]"* ||
+               "$PR_TITLE" == *"[minor]"* ||
+               "$PR_TITLE" == *"[patch]"* ||
+               "$PR_TITLE" == *"[skip-release]"* ]] || {
+              echo "Mixed image-trust and module changes require an explicit release marker" >&2
+              exit 1
+            }
+          fi
 
   build:
     name: Build and scan / ${{ matrix.architecture.platform }}

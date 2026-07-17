@@ -86,8 +86,20 @@ grep -Fq '      - edited' "$workflow" ||
   fail "editing an image pull request title does not rerun release separation"
 grep -Fq '      - .github/workflows/lint-test.yml' "$workflow" ||
   fail "changes to the image CI trust anchor do not run the image checks"
+grep -Fq '      - .github/workflows/release.yml' "$workflow" ||
+  fail "changes to the release-separation trust anchor do not run the image checks"
 grep -Fq '[[ "$PR_TITLE" == *"[skip-release]"* ]]' "$workflow" ||
   fail "image changes can release the Terraform module"
+grep -Fq 'image_payload_changed=false' "$workflow" ||
+  fail "image and module changes are not classified separately"
+grep -Fq 'image_trust_changed=false' "$workflow" ||
+  fail "image trust changes are not classified separately"
+grep -Fq 'module_payload_changed=false' "$workflow" ||
+  fail "module payload changes are not classified separately"
+grep -Fq 'if [[ "$image_payload_changed" == true ||' "$workflow" ||
+  fail "image release separation is not limited to image payload changes"
+grep -Fq 'Mixed image-trust and module changes require an explicit release marker' "$workflow" ||
+  fail "mixed trust and module changes do not require explicit release intent"
 for eligibility_condition in \
   '"$CI_CONCLUSION" == success' \
   '"$CI_EVENT" == push' \
@@ -156,7 +168,10 @@ for release_contract in \
   'changed_files="$(' \
   'gh api --paginate \' \
   '.previous_filename // empty' \
-  'Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/lint-test.yml|.github/workflows/vault-image.yml)' \
+  'elif [[ "$PR_TITLE" != *"[major]"* &&' \
+  'image_or_trust_changed=false' \
+  'Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/lint-test.yml|.github/workflows/release.yml|.github/workflows/vault-image.yml)' \
+  'if [[ "$image_or_trust_changed" == true && "$other_changed" == false ]]; then' \
   'if: needs.classify.outputs.release-module == '\''true'\'''; do
   grep -Fq "$release_contract" "$release_workflow" ||
     fail "the module release workflow no longer classifies image-only changes: $release_contract"

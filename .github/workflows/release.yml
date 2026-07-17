@@ -31,19 +31,32 @@ jobs:
           release_module=true
           if [[ "$PR_TITLE" == *"[skip-release]"* ]]; then
             release_module=false
+          elif [[ "$PR_TITLE" != *"[major]"* &&
+                  "$PR_TITLE" != *"[minor]"* &&
+                  "$PR_TITLE" != *"[patch]"* ]]; then
+            image_or_trust_changed=false
+            other_changed=false
+            changed_files="$(
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+                --jq '.[] | .filename, (.previous_filename // empty)'
+            )"
+            while IFS= read -r changed_file; do
+              case "$changed_file" in
+                Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/lint-test.yml|.github/workflows/release.yml|.github/workflows/vault-image.yml)
+                  image_or_trust_changed=true
+                  ;;
+                README.md)
+                  ;;
+                *)
+                  other_changed=true
+                  ;;
+              esac
+            done <<< "$changed_files"
+            if [[ "$image_or_trust_changed" == true && "$other_changed" == false ]]; then
+              release_module=false
+            fi
           fi
-          changed_files="$(
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-              --jq '.[] | .filename, (.previous_filename // empty)'
-          )"
-          while IFS= read -r changed_file; do
-            case "$changed_file" in
-              Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/lint-test.yml|.github/workflows/vault-image.yml)
-                release_module=false
-                ;;
-            esac
-          done <<< "$changed_files"
           echo "release-module=$release_module" >> "$GITHUB_OUTPUT"
 
   release:
