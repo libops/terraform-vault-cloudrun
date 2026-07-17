@@ -31,6 +31,13 @@ preserving the reviewed Vault source identity. The runtime uses a numeric
 non-root identity and renders its seal config at startup from the
 `KMS_KEY_RING` and `KMS_CRYPTO_KEY` environment variables.
 
+The GCS backend enables its HA lock as a fencing boundary. The Cloud Run module
+normally caps the service at one instance, but Cloud Run can briefly overlap
+revisions or exceed a configured maximum. The lock prevents two Vault servers
+from becoming active against the same backend. Clustering remains disabled
+because Cloud Run services cannot address an individual instance's cluster
+listener; this is storage safety, not a highly available serving topology.
+
 Image publication is intentionally separate from module releases and ordinary
 API image bundles. A change to the Dockerfile, entrypoint, config template, or
 image workflow is built and scanned without credentials in pull requests. Once

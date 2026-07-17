@@ -65,6 +65,10 @@ grep -Fq 'COPY --from=builder --chown=0:0 --chmod=0555 /out/vault /usr/local/bin
   fail "Vault binary permissions or ownership are not locked down"
 grep -Fq 'COPY --chown=0:0 --chmod=0444 vault-server.hcl.tmpl /etc/vault/config.hcl.tmpl' "$dockerfile" ||
   fail "Vault template must remain root-owned and read-only"
+grep -Fq 'disable_clustering           = true' "$repo_root/vault-server.hcl.tmpl" ||
+  fail "the Cloud Run image must not advertise an unreachable cluster listener"
+grep -Fq 'ha_enabled = "true"' "$repo_root/vault-server.hcl.tmpl" ||
+  fail "the GCS storage backend must fence overlapping revisions with its HA lock"
 grep -Fq 'exec /usr/local/bin/vault server -config "$config_path"' "$entrypoint" ||
   fail "entrypoint does not execute the verified runtime binary"
 grep -Fq 'if [ "$#" -gt 0 ]; then' "$entrypoint" ||

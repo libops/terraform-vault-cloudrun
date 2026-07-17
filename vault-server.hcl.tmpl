@@ -15,5 +15,7 @@ seal "gcpckms" {
 }
 
 storage "gcs" {
-  ha_enabled = "false"
+  # Use the GCS HA lock as a fencing boundary even when a deployment normally
+  # runs one instance. Cloud Run can briefly overlap revisions during rollout.
+  ha_enabled = "true"
 }
