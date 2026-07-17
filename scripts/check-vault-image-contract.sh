@@ -8,7 +8,7 @@ entrypoint="$repo_root/docker-entrypoint.sh"
 workflow="$repo_root/.github/workflows/vault-image.yml"
 ci_workflow="$repo_root/.github/workflows/lint-test.yml"
 release_workflow="$repo_root/.github/workflows/release.yml"
-shared_publisher_sha="578137212ead4ab4059e95df17fa30e9b7ac4aed"
+shared_publisher_sha="8e27d95846671a9e319f1900e86a488a1d4f39b3"
 
 fail() {
   printf 'Vault image contract: %s\n' "$*" >&2
