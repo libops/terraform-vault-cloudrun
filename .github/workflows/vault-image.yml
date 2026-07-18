@@ -252,7 +252,7 @@ jobs:
     name: Publish Vault / GHCR and GAR
     if: needs.authorize.outputs.eligible == 'true'
     needs: authorize
-    uses: libops/.github/.github/workflows/build-push.yaml@d5a29840172a53729c5999832534de65b7ba9587
+    uses: libops/.github/.github/workflows/build-push.yaml@8e27d95846671a9e319f1900e86a488a1d4f39b3
     with:
       image: vault-server
       ref: ${{ github.event.workflow_run.head_sha }}
@@ -261,7 +261,7 @@ jobs:
       additional-gar-registry: us-docker.pkg.dev/libops-images/public
       scan: true
       sign: true
-      certificate-identity: https://github.com/libops/.github/.github/workflows/build-push.yaml@d5a29840172a53729c5999832534de65b7ba9587
+      certificate-identity: https://github.com/libops/.github/.github/workflows/build-push.yaml@8e27d95846671a9e319f1900e86a488a1d4f39b3
     secrets:
       GCLOUD_OIDC_POOL: ${{ secrets.GCLOUD_OIDC_POOL }}
       GSA: ${{ secrets.GSA }}
