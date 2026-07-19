@@ -8,7 +8,7 @@ entrypoint="$repo_root/docker-entrypoint.sh"
 workflow="$repo_root/.github/workflows/vault-image.yml"
 ci_workflow="$repo_root/.github/workflows/lint-test.yml"
 release_workflow="$repo_root/.github/workflows/release.yml"
-shared_publisher_sha="d5a29840172a53729c5999832534de65b7ba9587"
+shared_publisher_sha="8e27d95846671a9e319f1900e86a488a1d4f39b3"
 
 fail() {
   printf 'Vault image contract: %s\n' "$*" >&2
@@ -113,8 +113,10 @@ for eligibility_condition in \
   grep -Fq "$eligibility_condition" "$workflow" ||
     fail "workflow-run eligibility is missing: $eligibility_condition"
 done
-grep -Fq "libops/.github/.github/workflows/build-push.yaml@${shared_publisher_sha}" "$workflow" ||
+grep -Fq "uses: libops/.github/.github/workflows/build-push.yaml@${shared_publisher_sha}" "$workflow" ||
   fail "publication does not use the reviewed immutable shared publisher"
+grep -Fq "certificate-identity: https://github.com/libops/.github/.github/workflows/build-push.yaml@${shared_publisher_sha}" "$workflow" ||
+  fail "publication certificate identity does not match the reviewed shared publisher"
 grep -Fq 'additional-gar-registry: us-docker.pkg.dev/libops-images/public' "$workflow" ||
   fail "Cloud Run image is not published to the shared public GAR"
 grep -Fq 'GCLOUD_OIDC_POOL: ${{ secrets.GCLOUD_OIDC_POOL }}' "$workflow" ||
