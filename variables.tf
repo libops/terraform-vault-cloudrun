@@ -62,6 +62,20 @@ variable "initializer_gsa_account_id" {
   }
 }
 
+variable "proxy_gsa_account_id" {
+  type        = string
+  description = "Service account ID for the public Vault proxy. Defaults to the service name plus -proxy."
+  default     = ""
+
+  validation {
+    condition = (
+      trimspace(var.proxy_gsa_account_id) == "" ||
+      can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", trimspace(var.proxy_gsa_account_id)))
+    )
+    error_message = "proxy_gsa_account_id must be empty or a valid 6-30 character GCP service account ID."
+  }
+}
+
 variable "init_job_name" {
   type        = string
   description = "Cloud Run job name used to initialize Vault."
@@ -88,6 +102,26 @@ variable "initializer_execution_nonce" {
       trimspace(var.initializer_execution_nonce) == var.initializer_execution_nonce
     )
     error_message = "initializer_execution_nonce must be at most 128 characters with no leading or trailing whitespace."
+  }
+}
+
+variable "recovery_pgp_keys" {
+  type        = list(string)
+  description = "Exactly five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. Public keys are passed to Vault initialization; private keys must never enter Terraform."
+
+  validation {
+    condition = (
+      length(var.recovery_pgp_keys) == 5 &&
+      length(distinct(var.recovery_pgp_keys)) == 5 &&
+      alltrue([
+        for key in var.recovery_pgp_keys :
+        length(key) >= 44 &&
+        length(key) <= 87384 &&
+        length(key) % 4 == 0 &&
+        can(regex("^[A-Za-z0-9+/]+={0,2}$", key))
+      ])
+    )
+    error_message = "recovery_pgp_keys must contain exactly five distinct strict-base64 PGP public keys; keep private custodian keys outside Terraform."
   }
 }
 
@@ -194,6 +228,11 @@ variable "deletion_protection" {
   type        = bool
   description = "Protect both the Vault Cloud Run service and initializer job from accidental deletion."
   default     = true
+}
+
+variable "single_instance_preview_acknowledged" {
+  type        = bool
+  description = "Required explicit acknowledgement that this module is a single-serving-instance preview, not an HA Vault topology. Set true only for an approved limited deployment; this is not risk acceptance or production evidence."
 }
 
 variable "admin_emails" {

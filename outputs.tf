@@ -1,6 +1,16 @@
 output "vault_url" {
+  value       = module.vault_proxy.urls[var.region]
+  description = "Public URL of the Vault proxy Cloud Run service."
+}
+
+output "vault_runtime_url" {
   value       = module.vault.urls[var.region]
-  description = "URL of the Vault Cloud Run service."
+  description = "IAM-protected URL of the Vault runtime Cloud Run service."
+}
+
+output "proxy_service_account_email" {
+  value       = google_service_account.proxy.email
+  description = "Least-privileged service account used by the public Vault proxy."
 }
 
 output "runtime_service_account_email" {
@@ -41,7 +51,7 @@ output "initializer_execution_token" {
 # Compatibility aliases retained for existing callers. Prefer the descriptive
 # underscore-separated outputs above in new configurations.
 output "vault-url" {
-  value       = module.vault.urls[var.region]
+  value       = module.vault_proxy.urls[var.region]
   description = "Deprecated compatibility alias for vault_url."
 }
 

@@ -1,7 +1,8 @@
 # terraform-vault-cloudrun
 
-This Terraform module deploys a single-instance Vault service on Google Cloud
-Run with a public Vault Proxy v2 sidecar and a one-shot initializer job. It is a
+This Terraform module deploys a single-instance Vault runtime on Google Cloud
+Run, a separately identified public Vault Proxy v2 service, and a one-shot
+initializer job. It is a
 fork of
 [kelseyhightower/serverless-vault-with-cloud-run](https://github.com/kelseyhightower/serverless-vault-with-cloud-run)
 with explicit workload identities, immutable image inputs, and recovery
@@ -9,7 +10,7 @@ material isolated from the long-running Vault process.
 
 ## Security model
 
-The module creates two service accounts with separate responsibilities:
+The module creates three service accounts with separate responsibilities:
 
 - The Vault runtime can administer objects only in the Vault data bucket and
   view, encrypt, or decrypt with the configured KMS key. Vault's `gcpckms`
@@ -18,12 +19,15 @@ The module creates two service accounts with separate responsibilities:
 - The initializer can create and view objects only in the recovery bucket and
   encrypt or decrypt with the same KMS key. It cannot delete or overwrite
   recovery objects.
+- The public proxy has no GCS or KMS role. It can invoke only the IAM-protected
+  Vault runtime service and authenticates upstream with a short-lived metadata
+  ID token in `X-Serverless-Authorization`, preserving the client's separate
+  Vault authorization header.
 
-Cloud Run assigns one service identity to the whole multi-container revision.
-The co-located proxy therefore inherits the runtime account's GCS and KMS
-credentials even though the proxy does not use them. The runtime permissions
-are intentionally limited, but this remains a trust boundary: promote the Vault
-and proxy images as one reviewed unit.
+Cloud Run assigns one service identity to a revision, so Vault and the public
+proxy intentionally run as separate services. The Vault runtime is not publicly
+invokable; only the proxy service account receives `roles/run.invoker`. The
+proxy remains publicly invokable because it is the application-layer boundary.
 
 Vault Proxy v2 permits unauthenticated access only to canonical route patterns
 in `public_routes`. Every other route requires an `X-Admin-Token` Google access
@@ -32,15 +36,12 @@ the initializer service account. The Vault runtime service account is not a
 proxy administrator. Email comparisons and duplicate checks are
 case-insensitive to match Vault Proxy's identity normalization.
 
-The Cloud Run service remains publicly invokable because Vault Proxy is its
-application-layer boundary. Vault still enforces its own tokens and policies
-after the proxy check.
+Vault still enforces its own tokens and policies after the proxy check.
 
-The Vault container starts first and must pass its port-specific health probe
-on `8200` before Cloud Run starts the dependent proxy container. The proxy then
-passes its own `/healthz` probe on `8080` before the revision can receive
-traffic. The Vault health probe treats an uninitialized server as ready so the
-initializer job can complete the first deployment.
+The Vault runtime must pass its port-specific health probe on `8200`. Terraform
+then creates the public proxy, which must pass `/healthz` on `8080`, before the
+initializer runs. The Vault health probe treats an uninitialized server as
+ready so the initializer job can complete the first deployment.
 
 ## Prerequisites
 
@@ -85,6 +86,18 @@ module "vault" {
   vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:REVIEWED_DIGEST"
   vault_init_image  = "us-docker.pkg.dev/example-project/public/vault-init@sha256:REVIEWED_DIGEST"
 
+  recovery_pgp_keys = [
+    filebase64("custodian-1-public.pgp"),
+    filebase64("custodian-2-public.pgp"),
+    filebase64("custodian-3-public.pgp"),
+    filebase64("custodian-4-public.pgp"),
+    filebase64("custodian-5-public.pgp"),
+  ]
+
+  # This module is intentionally blocked by default from being mistaken for
+  # an HA production topology.
+  single_instance_preview_acknowledged = true
+
   admin_emails = [
     "vault-admin@example.org",
   ]
@@ -116,9 +129,21 @@ initializer service account. The selected Vault Init image must request a
 Google metadata access token containing the `userinfo.email` scope expected by
 Vault Proxy v2.
 
-Encrypted recovery material is stored in `recovery_bucket_name`. Treat access
-to that bucket and the KMS key as privileged disaster-recovery access. Do not
-copy the decrypted root token into Terraform state or CI logs.
+Root-token-free encrypted recovery material is stored in
+`recovery_bucket_name`. Fresh initialization requests five recovery shares with
+a threshold of three, enables the `cloudrun/` JSON audit device on Vault stdout,
+revokes and verifies the initial root token, and records a non-secret completion
+marker. Treat access to the bucket, KMS key, recovery shares, and Cloud Logging
+as privileged disaster-recovery/audit access. Assign recovery shares to
+independent custodians; bucket/KMS access alone is not a custody quorum. Do not
+copy decrypted material into Terraform, CI, logs, tickets, chat, or command
+arguments.
+
+`recovery_pgp_keys` is required and must contain five distinct binary PGP
+public keys encoded with base64. Vault encrypts one recovery share to each key;
+the initializer stores only those encrypted shares. Keep the corresponding
+private keys in separate custodian systems. Public keys may appear in Terraform
+state, but private keys and decrypted recovery shares must not.
 
 ## Public route policy
 
@@ -146,14 +171,17 @@ here.
 
 ## Availability and revisions
 
-This is a single-serving-instance Vault deployment, not an HA failover
+This remains a single-serving-instance Vault deployment, not an HA failover
 topology. The pinned Cloud Run module applies a service-level maximum of one
 across traffic-serving revisions. Because Cloud Run can still briefly exceed a
 configured maximum during rollout, the GCS backend enables its HA lock to fence
 overlapping revisions so only one Vault server becomes active. Clustering stays
 disabled because Cloud Run services cannot address individual instance cluster
 listeners. Revision changes can therefore cause transient request failures;
-quiesce clients and use a maintenance window.
+quiesce clients and use a maintenance window. The separate proxy may scale
+independently but does not make the Vault storage runtime HA. Production
+availability claims remain blocked until an explicitly selected HA topology
+and a hosted failover and recovery drill are promoted.
 
 ## Local development image
 
@@ -213,6 +241,7 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | Name | Source | Version |
 |------|--------|---------|
 | <a name="module_vault"></a> [vault](#module\_vault) | https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62 | n/a |
+| <a name="module_vault_proxy"></a> [vault\_proxy](#module\_vault\_proxy) | https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62 | n/a |
 
 ## Resources
 
@@ -224,6 +253,7 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | [google_kms_crypto_key_iam_member.vault](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key_iam_member) | resource |
 | [google_kms_key_ring.vault-server](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_key_ring) | resource |
 | [google_service_account.initializer](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
+| [google_service_account.proxy](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
 | [google_service_account.runtime](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
 | [google_storage_bucket.vault](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket) | resource |
 | [google_storage_bucket_iam_member.initializer_recovery](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_member) | resource |
@@ -247,8 +277,11 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | <a name="input_kms_key_ring_name"></a> [kms\_key\_ring\_name](#input\_kms\_key\_ring\_name) | KMS key ring name used for auto-unseal. | `string` | `"vault-server"` | no |
 | <a name="input_name"></a> [name](#input\_name) | Cloud Run service name for the Vault server. | `string` | `"vault-server"` | no |
 | <a name="input_project"></a> [project](#input\_project) | GCP project in which to deploy Vault. | `string` | n/a | yes |
+| <a name="input_proxy_gsa_account_id"></a> [proxy\_gsa\_account\_id](#input\_proxy\_gsa\_account\_id) | Service account ID for the public Vault proxy. Defaults to the service name plus -proxy. | `string` | `""` | no |
 | <a name="input_public_routes"></a> [public\_routes](#input\_public\_routes) | Optional canonical Vault Proxy v2 path patterns accessible without X-Admin-Token. /v1/sys/health is always added. | `list(string)` | <pre>[<br/>  "/.well-known/**",<br/>  "/v1/identity/oidc/provider/*/.well-known/**",<br/>  "/v1/identity/oidc/provider/*/authorize",<br/>  "/v1/identity/oidc/provider/*/token",<br/>  "/v1/identity/oidc/provider/*/userinfo",<br/>  "/ui/vault/identity/oidc/provider/*/authorize",<br/>  "/v1/auth/oidc/oidc/auth_url",<br/>  "/v1/auth/oidc/oidc/callback",<br/>  "/ui/vault/auth/*/oidc/callback",<br/>  "/v1/auth/userpass/login/**"<br/>]</pre> | no |
+| <a name="input_recovery_pgp_keys"></a> [recovery\_pgp\_keys](#input\_recovery\_pgp\_keys) | Exactly five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. Public keys are passed to Vault initialization; private keys must never enter Terraform. | `list(string)` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | GCP region in which to deploy the Cloud Run service and initializer job. | `string` | `"us-east5"` | no |
+| <a name="input_single_instance_preview_acknowledged"></a> [single\_instance\_preview\_acknowledged](#input\_single\_instance\_preview\_acknowledged) | Required explicit acknowledgement that this module is a single-serving-instance preview, not an HA Vault topology. Set true only for an approved limited deployment; this is not risk acceptance or production evidence. | `bool` | n/a | yes |
 | <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Digest-pinned GAR image reference for the Vault server container. | `string` | n/a | yes |
 | <a name="input_vault_init_image"></a> [vault\_init\_image](#input\_vault\_init\_image) | Digest-pinned GAR image reference for the Vault initializer container. | `string` | n/a | yes |
 | <a name="input_vault_proxy_image"></a> [vault\_proxy\_image](#input\_vault\_proxy\_image) | Digest-pinned GAR image reference for the Vault Proxy v2 container. | `string` | n/a | yes |
@@ -264,8 +297,10 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | <a name="output_initializer_service_account_email"></a> [initializer\_service\_account\_email](#output\_initializer\_service\_account\_email) | Service account used by the one-shot Vault initializer job. |
 | <a name="output_key_bucket"></a> [key\_bucket](#output\_key\_bucket) | Deprecated compatibility alias for recovery\_bucket\_name. |
 | <a name="output_kms_key_id"></a> [kms\_key\_id](#output\_kms\_key\_id) | Full resource ID of the KMS key used by Vault and the initializer. |
+| <a name="output_proxy_service_account_email"></a> [proxy\_service\_account\_email](#output\_proxy\_service\_account\_email) | Least-privileged service account used by the public Vault proxy. |
 | <a name="output_recovery_bucket_name"></a> [recovery\_bucket\_name](#output\_recovery\_bucket\_name) | Bucket containing encrypted Vault recovery material. |
 | <a name="output_runtime_service_account_email"></a> [runtime\_service\_account\_email](#output\_runtime\_service\_account\_email) | Service account used by the long-running Vault service. |
 | <a name="output_vault-url"></a> [vault-url](#output\_vault-url) | Deprecated compatibility alias for vault\_url. |
-| <a name="output_vault_url"></a> [vault\_url](#output\_vault\_url) | URL of the Vault Cloud Run service. |
+| <a name="output_vault_runtime_url"></a> [vault\_runtime\_url](#output\_vault\_runtime\_url) | IAM-protected URL of the Vault runtime Cloud Run service. |
+| <a name="output_vault_url"></a> [vault\_url](#output\_vault\_url) | Public URL of the Vault proxy Cloud Run service. |
 <!-- END_TF_DOCS -->

@@ -37,8 +37,28 @@ locals {
     ? trimspace(var.initializer_gsa_account_id)
     : "${substr(local.service_name, 0, 25)}-init"
   )
+  # Reserve the suffix before truncation. Appending and then truncating can
+  # silently drop "-proxy" for long names, colliding with the runtime identity.
+  proxy_account_id_prefix = replace(
+    substr(local.service_name, 0, 24),
+    "/-+$/",
+    "",
+  )
+  proxy_account_id_candidate = "${local.proxy_account_id_prefix}-proxy"
+  proxy_account_id = (
+    trimspace(var.proxy_gsa_account_id) != ""
+    ? trimspace(var.proxy_gsa_account_id)
+    : local.proxy_account_id_candidate
+  )
+  proxy_service_name_prefix = replace(
+    substr(local.service_name, 0, 43),
+    "/-+$/",
+    "",
+  )
+  proxy_service_name                = "${local.proxy_service_name_prefix}-proxy"
   runtime_service_account_email     = google_service_account.runtime.email
   initializer_service_account_email = google_service_account.initializer.email
+  proxy_service_account_email       = google_service_account.proxy.email
   data_bucket_name = trimspace(var.data_bucket_name) != "" ? trimspace(var.data_bucket_name) : lower(
     replace(replace(replace("${var.project}-${local.service_name}-data", "_", "-"), ".", "-"), " ", "-")
   )
@@ -57,8 +77,9 @@ locals {
   # initializer identity is the only workload identity that bypasses the
   # public-route allowlist; the Vault runtime identity is intentionally absent.
   vault_proxy_config = {
-    vault_addr = "http://127.0.0.1:8200"
-    port       = 8080
+    vault_addr     = module.vault.urls[var.region]
+    vault_audience = module.vault.urls[var.region]
+    port           = 8080
     admin_emails = distinct([
       for email in concat(var.admin_emails, [local.initializer_service_account_email]) :
       lower(email)
@@ -93,11 +114,13 @@ locals {
       cpu                  = "2000m"
       liveness_probe       = ""
       startup_probe_config = local.vault_startup_probe
-    },
+    }
+  ]
+  proxy_containers = [
     {
       name                 = "proxy"
       image                = var.vault_proxy_image
-      depends_on           = ["vault"]
+      depends_on           = []
       port                 = 8080
       memory               = "512Mi"
       cpu                  = "500m"
@@ -122,19 +145,24 @@ locals {
       name  = "GOOGLE_STORAGE_BUCKET"
       value = google_storage_bucket.vault["data"].name
     },
+  ])
+  proxy_environment = tolist([
     {
       name  = "VAULT_PROXY_YAML"
       value = local.vault_proxy_yaml
     },
   ])
   initializer_environment = {
-    CHECK_INTERVAL         = "0s"
-    GCS_BUCKET_NAME        = google_storage_bucket.vault["key"].name
-    GOOGLE_PROJECT         = var.project
-    KMS_KEY_ID             = local.kms_key_id
-    VAULT_ADDR             = module.vault.urls[var.region]
-    VAULT_SECRET_SHARES    = "0"
-    VAULT_SECRET_THRESHOLD = "0"
+    CHECK_INTERVAL           = "0s"
+    GCS_BUCKET_NAME          = google_storage_bucket.vault["key"].name
+    GOOGLE_PROJECT           = var.project
+    KMS_KEY_ID               = local.kms_key_id
+    VAULT_ADDR               = module.vault_proxy.urls[var.region]
+    VAULT_SECRET_SHARES      = "0"
+    VAULT_SECRET_THRESHOLD   = "0"
+    VAULT_RECOVERY_SHARES    = "5"
+    VAULT_RECOVERY_THRESHOLD = "3"
+    VAULT_RECOVERY_PGP_KEYS  = jsonencode(var.recovery_pgp_keys)
   }
   initializer_job_settings = {
     task_count      = 1
@@ -154,6 +182,7 @@ locals {
       project                           = var.project
       region                            = var.region
       runtime_service_account_email     = local.runtime_service_account_email
+      proxy_service_account_email       = local.proxy_service_account_email
       initializer_service_account_email = local.initializer_service_account_email
       data_bucket_name                  = local.data_bucket_name
       recovery_bucket_name              = local.recovery_bucket_name
@@ -169,7 +198,12 @@ locals {
       containers                = local.vault_containers
       cloud_run_module_revision = local.cloud_run_module_revision
     }
-    proxy = local.vault_proxy_config
+    proxy = {
+      name                  = local.proxy_service_name
+      service_account_email = local.proxy_service_account_email
+      config                = local.vault_proxy_config
+      containers            = local.proxy_containers
+    }
     initializer = {
       job_name                 = var.init_job_name
       service_account_email    = local.initializer_service_account_email
@@ -205,6 +239,13 @@ resource "google_service_account" "runtime" {
   project      = var.project
   account_id   = local.runtime_account_id
   display_name = "Vault runtime"
+
+  lifecycle {
+    precondition {
+      condition     = var.single_instance_preview_acknowledged
+      error_message = "terraform-vault-cloudrun is a single-serving-instance preview. Explicitly acknowledge that topology for an approved limited deployment; use a separately reviewed HA architecture for production availability."
+    }
+  }
 }
 
 resource "google_service_account" "initializer" {
@@ -223,6 +264,29 @@ resource "google_service_account" "initializer" {
         lower(local.runtime_service_account_email),
       )
       error_message = "The Vault runtime service account must not be listed as a proxy administrator."
+    }
+  }
+}
+
+resource "google_service_account" "proxy" {
+  project      = var.project
+  account_id   = local.proxy_account_id
+  display_name = "Vault public proxy"
+
+  lifecycle {
+    precondition {
+      condition = (
+        local.proxy_account_id != local.runtime_account_id &&
+        local.proxy_account_id != local.initializer_account_id
+      )
+      error_message = "The Vault proxy must use an account ID distinct from the runtime and initializer."
+    }
+    precondition {
+      condition = !contains(
+        [for email in var.admin_emails : lower(email)],
+        lower("${local.proxy_account_id}@${var.project}.iam.gserviceaccount.com"),
+      )
+      error_message = "The Vault proxy service account must not be listed as a proxy administrator."
     }
   }
 }
@@ -308,7 +372,7 @@ module "vault" {
   min_instances       = local.vault_min_instances
   max_instances       = local.vault_max_instances
   deletion_protection = var.deletion_protection
-  invokers            = ["allUsers"]
+  invokers            = ["serviceAccount:${google_service_account.proxy.email}"]
   containers          = local.vault_containers
   addl_env_vars       = local.vault_environment
   vpc_direct_egress   = local.vault_vpc_direct_egress
@@ -317,6 +381,25 @@ module "vault" {
     google_kms_crypto_key_iam_member.vault,
     google_storage_bucket_iam_member.member,
   ]
+}
+
+module "vault_proxy" {
+  source = "https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62"
+
+  name                = local.proxy_service_name
+  project             = var.project
+  regions             = [var.region]
+  skipNeg             = true
+  gsa                 = google_service_account.proxy.email
+  min_instances       = 0
+  max_instances       = 2
+  deletion_protection = var.deletion_protection
+  invokers            = ["allUsers"]
+  containers          = local.proxy_containers
+  addl_env_vars       = local.proxy_environment
+  vpc_direct_egress   = "OFF"
+
+  depends_on = [module.vault]
 }
 
 resource "google_cloud_run_v2_job" "vault-init" {
@@ -361,7 +444,7 @@ resource "google_cloud_run_v2_job" "vault-init" {
   }
 
   depends_on = [
-    module.vault,
+    module.vault_proxy,
     google_kms_crypto_key_iam_member.initializer,
     google_storage_bucket_iam_member.initializer_recovery,
   ]

@@ -46,15 +46,16 @@ moved {
 The existing service account therefore remains the Vault runtime identity. A
 new initializer service account is created. If `gsa_account_id` was set
 previously, keep the same value so Terraform preserves the existing identity.
-Use `initializer_gsa_account_id` only when the derived initializer ID conflicts
-with another account.
+Use `initializer_gsa_account_id` or `proxy_gsa_account_id` only when a derived
+ID conflicts with another account.
 
 The upgrade removes runtime access to the recovery bucket and grants the new
 initializer only Object Creator and Object Viewer there. The runtime keeps
 Object Admin on the data bucket. The runtime receives KMS Viewer plus
 Encrypt/Decrypt for Vault auto-unseal; the initializer receives only KMS
-Encrypt/Decrypt. Review the plan for those exact removals and additions before
-approval.
+Encrypt/Decrypt. A new proxy identity receives only Cloud Run Invoker on the
+Vault runtime and no bucket/KMS role. Review the plan for those exact removals
+and additions before approval.
 
 The old `gsa`, `key_bucket`, and `vault-url` outputs remain as deprecated
 aliases. New callers should use `runtime_service_account_email`,
@@ -64,9 +65,10 @@ aliases. New callers should use `runtime_service_account_email`,
 
 - The service is capped at one instance.
 - Service and initializer deletion protection default to enabled.
-- Vault starts first and must pass a port-specific health probe on `8200`.
-  Cloud Run then starts the dependent proxy, which must pass `/healthz` on
-  `8080`.
+- Vault remains at the existing service address but becomes IAM-protected and
+  contains only the Vault container. A separately named public proxy service
+  receives traffic, authenticates to Vault with a short-lived metadata ID
+  token, and exposes `/healthz` on `8080`.
 - The initializer runs one task at parallelism one, retries at most three
   times, and has a ten-minute task timeout.
 - `CHECK_INTERVAL=0s` makes the initializer one-shot.
@@ -87,9 +89,22 @@ The initializer job is the module's only `google-beta` resource because
 `run_execution_token` remains absent from the stable provider. All other
 resources use the stable `google` provider.
 
-Cloud Run assigns the runtime service account to both co-located containers, so
-Vault Proxy inherits the runtime GCS and KMS credentials even though it does
-not use them. Review and promote the proxy and Vault images together.
+The public `vault_url` and deprecated `vault-url` output now point to the new
+proxy service; `vault_runtime_url` identifies the IAM-protected runtime. Update
+DNS and callers only after validating the proxy path. Review and promote the
+proxy and Vault images together even though their identities are isolated.
+
+Fresh deployments no longer retain an initial root token and use a five-share,
+three-threshold recovery quorum. An existing v1 recovery bucket contains both a
+live or historically live `root-token.enc` and a full initialization response
+whose JSON also contains that token. Before the new initializer can succeed,
+named custodians must perform the documented restricted migration: verify and
+revoke the old root token, decrypt and re-encrypt the recovery bundle without
+`root_token`, remove the legacy object, enable and verify the `cloudrun/` stdout
+audit device, and write the completion marker. Back up the original encrypted
+objects before mutation, retain an audit record, and never expose plaintext in
+Terraform, CI, tickets, chat, or shell arguments. The initializer intentionally
+fails closed instead of automating this destructive custody transition.
 
 This remains a single-serving-instance deployment rather than an HA failover
 topology. The service-level maximum is one, and the GCS HA lock fences the brief
@@ -111,5 +126,7 @@ If the existing resources need to be destroyed, first set
 6. Apply in a maintenance window.
 7. Confirm `/healthz`, `/v1/sys/health`, an administrator route, and a normal
    client authentication flow.
-8. Confirm both encrypted recovery objects are readable by the initializer
-   identity; Terraform has already required the initializer job to complete.
+8. Confirm the root-token-free encrypted recovery bundle and non-secret
+   completion marker are readable, `root-token.enc` is absent, `cloudrun/`
+   audit entries reach the approved Cloud Logging sink, and the initializer job
+   completed.

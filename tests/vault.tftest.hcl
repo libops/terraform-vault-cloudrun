@@ -29,6 +29,14 @@ override_resource {
 }
 
 override_resource {
+  target          = google_service_account.proxy
+  override_during = plan
+  values = {
+    email = "vault-server-proxy@example-project.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
   target          = google_kms_crypto_key.key[0]
   override_during = plan
   values = {
@@ -45,21 +53,52 @@ override_module {
   }
 }
 
-variables {
-  project           = "example-project"
-  region            = "us-central1"
-  admin_emails      = ["vault-admin@example.org"]
-  vault_image       = "us-docker.pkg.dev/example-project/public/vault@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  vault_init_image  = "us-docker.pkg.dev/example-project/public/vault-init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+override_module {
+  target = module.vault_proxy
+  outputs = {
+    urls = {
+      "us-central1" = "https://vault-server-proxy.example.test"
+    }
+  }
 }
 
-run "splits_runtime_and_initializer_privileges" {
+variables {
+  project                              = "example-project"
+  region                               = "us-central1"
+  admin_emails                         = ["vault-admin@example.org"]
+  vault_image                          = "us-docker.pkg.dev/example-project/public/vault@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  vault_proxy_image                    = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  vault_init_image                     = "us-docker.pkg.dev/example-project/public/vault-init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  single_instance_preview_acknowledged = true
+  recovery_pgp_keys = [
+    "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==",
+    "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYg==",
+    "Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYw==",
+    "ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZA==",
+    "ZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZQ==",
+  ]
+}
+
+run "rejects_unacknowledged_single_instance_preview" {
+  command = plan
+
+  variables {
+    single_instance_preview_acknowledged = false
+  }
+
+  expect_failures = [google_service_account.runtime]
+}
+
+run "splits_runtime_initializer_and_proxy_privileges" {
   command = plan
 
   assert {
     condition = (
-      google_service_account.runtime.account_id != google_service_account.initializer.account_id &&
+      length(distinct([
+        google_service_account.runtime.account_id,
+        google_service_account.initializer.account_id,
+        google_service_account.proxy.account_id,
+      ])) == 3 &&
       length(google_storage_bucket_iam_member.member) == 1 &&
       alltrue([
         for binding in google_storage_bucket_iam_member.member :
@@ -68,7 +107,7 @@ run "splits_runtime_and_initializer_privileges" {
         binding.member == "serviceAccount:${google_service_account.runtime.email}"
       ])
     )
-    error_message = "The runtime identity must be distinct and limited to objectAdmin on the data bucket."
+    error_message = "Runtime, initializer, and proxy identities must be distinct, and runtime must be limited to objectAdmin on the data bucket."
   }
 
   assert {
@@ -109,6 +148,14 @@ run "splits_runtime_and_initializer_privileges" {
     )
     error_message = "Vault runtime must receive KMS get plus encrypt/decrypt, while the initializer receives only encrypt/decrypt."
   }
+
+  assert {
+    condition = (
+      !contains(local.vault_proxy_config.admin_emails, local.proxy_service_account_email) &&
+      local.initializer_execution_contract.proxy.service_account_email == google_service_account.proxy.email
+    )
+    error_message = "The public proxy identity must receive neither administrator status nor runtime storage/KMS authority."
+  }
 }
 
 run "configures_vault_proxy_v2_boundary" {
@@ -128,6 +175,8 @@ run "configures_vault_proxy_v2_boundary" {
     condition = (
       contains(local.vault_proxy_config.public_routes, "/v1/auth/userpass/login/**") &&
       contains(local.vault_proxy_config.public_routes, "/v1/sys/health") &&
+      local.vault_proxy_config.vault_addr == module.vault.urls[var.region] &&
+      local.vault_proxy_config.vault_audience == module.vault.urls[var.region] &&
       alltrue([
         for route in local.vault_proxy_config.public_routes :
         !endswith(route, "/")
@@ -144,18 +193,19 @@ run "configures_vault_proxy_v2_boundary" {
       local.vault_containers[0].startup_probe_config.path == "/v1/sys/health?uninitcode=200" &&
       local.vault_containers[0].startup_probe_config.failure_threshold *
       local.vault_containers[0].startup_probe_config.period_seconds == 240 &&
-      local.vault_containers[1].name == "proxy" &&
-      local.vault_containers[1].image == var.vault_proxy_image &&
-      local.vault_containers[1].depends_on == ["vault"] &&
-      local.vault_containers[1].startup_probe_config.path == "/healthz" &&
-      local.vault_containers[1].startup_probe_config.port == 8080 &&
-      local.vault_containers[1].liveness_probe == "/healthz" &&
+      length(local.vault_containers) == 1 &&
+      local.proxy_containers[0].name == "proxy" &&
+      local.proxy_containers[0].image == var.vault_proxy_image &&
+      local.proxy_containers[0].depends_on == [] &&
+      local.proxy_containers[0].startup_probe_config.path == "/healthz" &&
+      local.proxy_containers[0].startup_probe_config.port == 8080 &&
+      local.proxy_containers[0].liveness_probe == "/healthz" &&
       local.vault_vpc_direct_egress == "OFF" &&
       local.vault_max_instances == "1" &&
       local.initializer_execution_contract.service.cloud_run_module_revision == "4b1c2551369ec6f31372edb33721c80daeeeab62" &&
       var.deletion_protection
     )
-    error_message = "Vault must become reachable on port 8200 before the pinned proxy starts, and Direct VPC must remain off."
+    error_message = "Vault and the pinned proxy must run as separate service identities with authenticated upstream routing, and Direct VPC must remain off."
   }
 }
 
@@ -173,7 +223,11 @@ run "configures_bounded_one_shot_initializer" {
       google_cloud_run_v2_job.vault-init.template[0].parallelism == 1 &&
       google_cloud_run_v2_job.vault-init.template[0].template[0].max_retries == 3 &&
       google_cloud_run_v2_job.vault-init.template[0].template[0].timeout == "600s" &&
-      google_cloud_run_v2_job.vault-init.template[0].template[0].service_account == google_service_account.initializer.email
+      google_cloud_run_v2_job.vault-init.template[0].template[0].service_account == google_service_account.initializer.email &&
+      local.initializer_environment.VAULT_ADDR == module.vault_proxy.urls[var.region] &&
+      local.initializer_environment.VAULT_RECOVERY_SHARES == "5" &&
+      local.initializer_environment.VAULT_RECOVERY_THRESHOLD == "3" &&
+      local.initializer_environment.VAULT_RECOVERY_PGP_KEYS == jsonencode(var.recovery_pgp_keys)
     )
     error_message = "The initializer must be deletion-protected, serialized, retry-bounded, and use its isolated identity."
   }
@@ -185,6 +239,22 @@ run "configures_bounded_one_shot_initializer" {
     )
     error_message = "The initializer must use its pinned image and one-shot check interval."
   }
+}
+
+run "rejects_duplicate_recovery_custodian_keys" {
+  command = plan
+
+  variables {
+    recovery_pgp_keys = [
+      "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==",
+      "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYg==",
+      "Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYw==",
+      "ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZA==",
+      "ZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZA==",
+    ]
+  }
+
+  expect_failures = [var.recovery_pgp_keys]
 }
 
 run "changed_initializer_image_changes_execution_token" {
@@ -219,11 +289,24 @@ run "preserves_compatibility_outputs" {
   assert {
     condition = (
       output.vault-url == output.vault_url &&
+      output.vault_url == module.vault_proxy.urls[var.region] &&
+      output.vault_runtime_url == module.vault.urls[var.region] &&
       output.gsa == output.runtime_service_account_email &&
       output.key_bucket == output.recovery_bucket_name
     )
     error_message = "Legacy output aliases must resolve to the new descriptive outputs."
   }
+}
+
+run "rejects_shared_proxy_service_account_id" {
+  command = plan
+
+  variables {
+    gsa_account_id       = "shared-vault"
+    proxy_gsa_account_id = "shared-vault"
+  }
+
+  expect_failures = [google_service_account.proxy]
 }
 
 run "rejects_empty_admin_allowlist" {
@@ -384,8 +467,13 @@ run "derives_valid_runtime_identity_from_hyphenated_name" {
   }
 
   assert {
-    condition     = google_service_account.runtime.account_id == "a----0"
-    error_message = "The derived runtime service account ID must remain valid after trimming a long trailing hyphen run."
+    condition = (
+      google_service_account.runtime.account_id == "a----0" &&
+      google_service_account.proxy.account_id == "a-proxy" &&
+      endswith(local.proxy_service_name, "-proxy") &&
+      local.proxy_service_name != local.service_name
+    )
+    error_message = "Derived runtime and proxy names must remain valid and distinct after trimming a long trailing hyphen run."
   }
 }
 
