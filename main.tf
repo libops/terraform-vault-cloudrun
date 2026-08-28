@@ -152,7 +152,7 @@ locals {
       value = local.vault_proxy_yaml
     },
   ])
-  initializer_environment = {
+  initializer_environment = merge({
     CHECK_INTERVAL           = "0s"
     GCS_BUCKET_NAME          = google_storage_bucket.vault["key"].name
     GOOGLE_PROJECT           = var.project
@@ -162,8 +162,9 @@ locals {
     VAULT_SECRET_THRESHOLD   = "0"
     VAULT_RECOVERY_SHARES    = "5"
     VAULT_RECOVERY_THRESHOLD = "3"
-    VAULT_RECOVERY_PGP_KEYS  = jsonencode(var.recovery_pgp_keys)
-  }
+    }, length(var.recovery_pgp_keys) == 0 ? {} : {
+    VAULT_RECOVERY_PGP_KEYS = jsonencode(var.recovery_pgp_keys)
+  })
   initializer_job_settings = {
     task_count      = 1
     parallelism     = 1

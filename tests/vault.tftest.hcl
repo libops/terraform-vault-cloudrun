@@ -241,6 +241,23 @@ run "configures_bounded_one_shot_initializer" {
   }
 }
 
+run "protects_recovery_bundle_with_kms_and_gcs_without_pgp_keys" {
+  command = plan
+
+  variables {
+    recovery_pgp_keys = []
+  }
+
+  assert {
+    condition = (
+      local.initializer_environment.VAULT_RECOVERY_SHARES == "5" &&
+      local.initializer_environment.VAULT_RECOVERY_THRESHOLD == "3" &&
+      !contains(keys(local.initializer_environment), "VAULT_RECOVERY_PGP_KEYS")
+    )
+    error_message = "The initializer must let Vault return recovery shares for KMS encryption and GCS storage when custodian PGP keys are omitted."
+  }
+}
+
 run "rejects_duplicate_recovery_custodian_keys" {
   command = plan
 

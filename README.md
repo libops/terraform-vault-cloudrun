@@ -86,14 +86,6 @@ module "vault" {
   vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:REVIEWED_DIGEST"
   vault_init_image  = "us-docker.pkg.dev/example-project/public/vault-init@sha256:REVIEWED_DIGEST"
 
-  recovery_pgp_keys = [
-    filebase64("custodian-1-public.pgp"),
-    filebase64("custodian-2-public.pgp"),
-    filebase64("custodian-3-public.pgp"),
-    filebase64("custodian-4-public.pgp"),
-    filebase64("custodian-5-public.pgp"),
-  ]
-
   # This module is intentionally blocked by default from being mistaken for
   # an HA production topology.
   single_instance_preview_acknowledged = true
@@ -139,11 +131,13 @@ independent custodians; bucket/KMS access alone is not a custody quorum. Do not
 copy decrypted material into Terraform, CI, logs, tickets, chat, or command
 arguments.
 
-`recovery_pgp_keys` is required and must contain five distinct binary PGP
-public keys encoded with base64. Vault encrypts one recovery share to each key;
-the initializer stores only those encrypted shares. Keep the corresponding
-private keys in separate custodian systems. Public keys may appear in Terraform
-state, but private keys and decrypted recovery shares must not.
+By default Vault returns five recovery shares to the initializer, which removes
+the initial root token, encrypts the recovery bundle with Google KMS, and stores
+only ciphertext in the create-only recovery object in GCS. Set
+`recovery_pgp_keys` to five distinct base64-encoded binary PGP public keys only
+when independent human custody is required; Vault then encrypts one share to
+each key before the KMS/GCS protection layer. Private keys and decrypted
+recovery shares must not enter Terraform, CI, logs, tickets, or chat.
 
 ## Public route policy
 
@@ -279,7 +273,7 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | <a name="input_project"></a> [project](#input\_project) | GCP project in which to deploy Vault. | `string` | n/a | yes |
 | <a name="input_proxy_gsa_account_id"></a> [proxy\_gsa\_account\_id](#input\_proxy\_gsa\_account\_id) | Service account ID for the public Vault proxy. Defaults to the service name plus -proxy. | `string` | `""` | no |
 | <a name="input_public_routes"></a> [public\_routes](#input\_public\_routes) | Optional canonical Vault Proxy v2 path patterns accessible without X-Admin-Token. /v1/sys/health is always added. | `list(string)` | <pre>[<br/>  "/.well-known/**",<br/>  "/v1/identity/oidc/provider/*/.well-known/**",<br/>  "/v1/identity/oidc/provider/*/authorize",<br/>  "/v1/identity/oidc/provider/*/token",<br/>  "/v1/identity/oidc/provider/*/userinfo",<br/>  "/ui/vault/identity/oidc/provider/*/authorize",<br/>  "/v1/auth/oidc/oidc/auth_url",<br/>  "/v1/auth/oidc/oidc/callback",<br/>  "/ui/vault/auth/*/oidc/callback",<br/>  "/v1/auth/userpass/login/**"<br/>]</pre> | no |
-| <a name="input_recovery_pgp_keys"></a> [recovery\_pgp\_keys](#input\_recovery\_pgp\_keys) | Exactly five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. Public keys are passed to Vault initialization; private keys must never enter Terraform. | `list(string)` | n/a | yes |
+| <a name="input_recovery_pgp_keys"></a> [recovery\_pgp\_keys](#input\_recovery\_pgp\_keys) | Optional set of five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. When omitted, Vault returns the shares to the initializer for KMS encryption and create-only GCS storage. | `list(string)` | `[]` | no |
 | <a name="input_region"></a> [region](#input\_region) | GCP region in which to deploy the Cloud Run service and initializer job. | `string` | `"us-east5"` | no |
 | <a name="input_single_instance_preview_acknowledged"></a> [single\_instance\_preview\_acknowledged](#input\_single\_instance\_preview\_acknowledged) | Required explicit acknowledgement that this module is a single-serving-instance preview, not an HA Vault topology. Set true only for an approved limited deployment; this is not risk acceptance or production evidence. | `bool` | n/a | yes |
 | <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Digest-pinned GAR image reference for the Vault server container. | `string` | n/a | yes |

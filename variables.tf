@@ -107,21 +107,23 @@ variable "initializer_execution_nonce" {
 
 variable "recovery_pgp_keys" {
   type        = list(string)
-  description = "Exactly five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. Public keys are passed to Vault initialization; private keys must never enter Terraform."
+  description = "Optional set of five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. When omitted, Vault returns the shares to the initializer for KMS encryption and create-only GCS storage."
+  default     = []
 
   validation {
     condition = (
-      length(var.recovery_pgp_keys) == 5 &&
-      length(distinct(var.recovery_pgp_keys)) == 5 &&
-      alltrue([
-        for key in var.recovery_pgp_keys :
-        length(key) >= 44 &&
-        length(key) <= 87384 &&
-        length(key) % 4 == 0 &&
-        can(regex("^[A-Za-z0-9+/]+={0,2}$", key))
-      ])
+      length(var.recovery_pgp_keys) == 0 || (
+        length(var.recovery_pgp_keys) == 5 &&
+        length(distinct(var.recovery_pgp_keys)) == 5 &&
+        alltrue([
+          for key in var.recovery_pgp_keys :
+          length(key) >= 44 &&
+          length(key) <= 87384 &&
+          length(key) % 4 == 0 &&
+          can(regex("^[A-Za-z0-9+/]+={0,2}$", key))
+      ]))
     )
-    error_message = "recovery_pgp_keys must contain exactly five distinct strict-base64 PGP public keys; keep private custodian keys outside Terraform."
+    error_message = "recovery_pgp_keys must be empty or contain exactly five distinct strict-base64 PGP public keys; keep private custodian keys outside Terraform."
   }
 }
 
