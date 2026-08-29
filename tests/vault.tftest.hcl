@@ -190,7 +190,7 @@ run "configures_vault_proxy_v2_boundary" {
       local.vault_containers[0].name == "vault" &&
       local.vault_containers[0].image == var.vault_image &&
       local.vault_containers[0].startup_probe_config.port == 8200 &&
-      local.vault_containers[0].startup_probe_config.path == "/v1/sys/health?uninitcode=200" &&
+      local.vault_containers[0].startup_probe_config.path == "/v1/sys/health?standbycode=200&uninitcode=200" &&
       local.vault_containers[0].startup_probe_config.failure_threshold *
       local.vault_containers[0].startup_probe_config.period_seconds == 240 &&
       length(local.vault_containers) == 1 &&
