@@ -97,7 +97,7 @@ locals {
     failure_threshold     = 24
   }
   vault_startup_probe = {
-    path                  = "/v1/sys/health?uninitcode=200"
+    path                  = "/v1/sys/health?standbycode=200&uninitcode=200"
     port                  = 8200
     initial_delay_seconds = 0
     timeout_seconds       = 2

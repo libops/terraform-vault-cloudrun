@@ -46,7 +46,10 @@ Run IAM, and the public proxy still requires a valid initializer
 The Vault runtime must pass its port-specific health probe on `8200`. Terraform
 then creates the public proxy, which must pass `/healthz` on `8080`, before the
 initializer runs. The Vault health probe treats an uninitialized server as
-ready so the initializer job can complete the first deployment.
+ready so the initializer job can complete the first deployment. It also treats
+an initialized standby as ready so an overlapping Cloud Run revision can pass
+startup while the prior revision holds the GCS HA lease; sealed Vault remains
+unhealthy.
 
 ## Prerequisites
 
