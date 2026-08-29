@@ -207,6 +207,14 @@ run "configures_vault_proxy_v2_boundary" {
     )
     error_message = "Vault and the pinned proxy must run as separate service identities with authenticated upstream routing, and Direct VPC must remain off."
   }
+
+  assert {
+    condition = strcontains(
+      file("${path.module}/vault-server.hcl.tmpl"),
+      "enable_unauthenticated_access = [\"generate-root\"]",
+    )
+    error_message = "Vault root generation must be enabled only for the proxy-gated initializer recovery path."
+  }
 }
 
 run "configures_bounded_one_shot_initializer" {

@@ -45,7 +45,7 @@ vault_commit="$(
 )"
 [[ -n "$vault_commit" ]] ||
   fail "VAULT_COMMIT must be an exact upstream source commit"
-grep -Fq 'golang:1.26.5-bookworm@sha256:' "$dockerfile" ||
+grep -Fq 'golang:1.26.6-bookworm@sha256:' "$dockerfile" ||
   fail "Vault must be rebuilt with the pinned patched Go toolchain"
 grep -Fq 'git fetch --depth=1 origin "${VAULT_COMMIT}"' "$dockerfile" ||
   fail "Dockerfile does not fetch the exact upstream Vault commit"
@@ -57,8 +57,12 @@ grep -Fq 'COPY --from=builder --chown=0:0 --chmod=0444 /src/LICENSE /licenses/Va
   fail "Vault source license is not preserved in the runtime image"
 grep -Fq 'USER 65532:65532' "$dockerfile" ||
   fail "Vault runtime must use the dedicated non-root numeric identity"
-grep -Fq "apk add --no-cache 'ca-certificates=20260611-r0'" "$dockerfile" ||
+grep -Fq "'ca-certificates=20260611-r0'" "$dockerfile" ||
   fail "runtime packages must be version-pinned"
+grep -Fq "'libcrypto3=3.5.8-r0'" "$dockerfile" ||
+  fail "runtime libcrypto3 must be pinned to the patched version"
+grep -Fq "'libssl3=3.5.8-r0'" "$dockerfile" ||
+  fail "runtime libssl3 must be pinned to the patched version"
 grep -Fq 'chmod 0755 /etc/vault' "$dockerfile" ||
   fail "root-owned Vault configuration directory must remain traversable"
 grep -Fq 'COPY --from=builder --chown=0:0 --chmod=0555 /out/vault /usr/local/bin/vault' "$dockerfile" ||

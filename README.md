@@ -36,7 +36,12 @@ the initializer service account. The Vault runtime service account is not a
 proxy administrator. Email comparisons and duplicate checks are
 case-insensitive to match Vault Proxy's identity normalization.
 
-Vault still enforces its own tokens and policies after the proxy check.
+Vault still enforces its own tokens and policies after the proxy check, except
+for the `generate-root` endpoint family needed to recover an interrupted
+bootstrap after the initial root token has been revoked. Vault permits that
+single family without a Vault token. The runtime remains private behind Cloud
+Run IAM, and the public proxy still requires a valid initializer
+`X-Admin-Token` before forwarding any generate-root request.
 
 The Vault runtime must pass its port-specific health probe on `8200`. Terraform
 then creates the public proxy, which must pass `/healthz` on `8080`, before the

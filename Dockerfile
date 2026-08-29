@@ -1,8 +1,8 @@
-FROM golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS builder
+FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS builder
 
 ARG TARGETARCH
-ARG VAULT_VERSION=2.0.3
-ARG VAULT_COMMIT=7193f9a48ff6093ca61b3b627a8671e770428ba6
+ARG VAULT_VERSION=2.0.4
+ARG VAULT_COMMIT=c9e9d1d4ddd4b55aae79a8949adffa9e96338720
 
 WORKDIR /src
 RUN set -eux; \
@@ -21,7 +21,7 @@ RUN set -eux; \
 
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
-ARG VAULT_VERSION=2.0.3
+ARG VAULT_VERSION=2.0.4
 ARG IMAGE_REVISION=1
 
 LABEL org.opencontainers.image.title="LibOps Vault server" \
@@ -30,7 +30,10 @@ LABEL org.opencontainers.image.title="LibOps Vault server" \
       org.opencontainers.image.licenses="BUSL-1.1" \
       org.opencontainers.image.version="${VAULT_VERSION}-libops.${IMAGE_REVISION}"
 
-RUN apk add --no-cache 'ca-certificates=20260611-r0' && \
+RUN apk add --no-cache \
+        'ca-certificates=20260611-r0' \
+        'libcrypto3=3.5.8-r0' \
+        'libssl3=3.5.8-r0' && \
     mkdir -p /etc/vault && \
     chown 0:0 /etc/vault && \
     chmod 0755 /etc/vault
