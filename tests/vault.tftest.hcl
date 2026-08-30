@@ -66,9 +66,9 @@ variables {
   project                              = "example-project"
   region                               = "us-central1"
   admin_emails                         = ["vault-admin@example.org"]
-  vault_image                          = "us-docker.pkg.dev/example-project/public/vault@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  vault_proxy_image                    = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  vault_init_image                     = "us-docker.pkg.dev/example-project/public/vault-init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  vault_image                          = "us-docker.pkg.dev/example-project/public/vault-server:main"
+  vault_proxy_image                    = "us-docker.pkg.dev/example-project/public/vault-proxy:main"
+  vault_init_image                     = "us-docker.pkg.dev/example-project/public/vault-init:main"
   single_instance_preview_acknowledged = true
   recovery_pgp_keys = [
     "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==",
@@ -286,12 +286,12 @@ run "changed_initializer_image_changes_execution_token" {
   command = plan
 
   variables {
-    vault_init_image = "us-docker.pkg.dev/example-project/public/vault-init@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    vault_init_image = "us-docker.pkg.dev/example-project/public/vault-init:next"
   }
 
   assert {
     condition     = output.initializer_execution_token != run.configures_bounded_one_shot_initializer.initializer_execution_token
-    error_message = "Changing the initializer image digest must change the deterministic execution token."
+    error_message = "Changing the initializer image reference must change the deterministic execution token."
   }
 }
 
@@ -384,7 +384,7 @@ run "rejects_non_gar_vault_image" {
   command = plan
 
   variables {
-    vault_image = "ghcr.io/libops/vault@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    vault_image = "ghcr.io/libops/vault-server:main"
   }
 
   expect_failures = [var.vault_image]
@@ -394,27 +394,27 @@ run "rejects_whitespace_around_image" {
   command = plan
 
   variables {
-    vault_image = " us-docker.pkg.dev/example-project/public/vault@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    vault_image = " us-docker.pkg.dev/example-project/public/vault-server:main"
   }
 
   expect_failures = [var.vault_image]
 }
 
-run "rejects_unpinned_proxy_image" {
+run "rejects_untagged_proxy_image" {
   command = plan
 
   variables {
-    vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy:2.0.0"
+    vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy"
   }
 
   expect_failures = [var.vault_proxy_image]
 }
 
-run "rejects_unpinned_initializer_image" {
+run "rejects_digest_pinned_initializer_image" {
   command = plan
 
   variables {
-    vault_init_image = "us-docker.pkg.dev/example-project/public/vault-init:1.0.2"
+    vault_init_image = "us-docker.pkg.dev/example-project/public/vault-init@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   }
 
   expect_failures = [var.vault_init_image]
