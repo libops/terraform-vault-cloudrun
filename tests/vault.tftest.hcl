@@ -66,6 +66,9 @@ variables {
   project                              = "example-project"
   region                               = "us-central1"
   admin_emails                         = ["vault-admin@example.org"]
+  audit_alert_notification_channels    = ["projects/example-project/notificationChannels/vault-audit-oncall"]
+  audit_log_location                   = "us-central1"
+  audit_log_viewer_members             = ["group:vault-audit-reviewers@example.org"]
   vault_image                          = "us-docker.pkg.dev/example-project/public/vault-server:main"
   vault_proxy_image                    = "us-docker.pkg.dev/example-project/public/vault-proxy:main"
   vault_init_image                     = "us-docker.pkg.dev/example-project/public/vault-init:main"
@@ -79,6 +82,60 @@ variables {
   ]
 }
 
+run "protects_durable_vault_audit_evidence" {
+  command = plan
+
+  assert {
+    condition = (
+      google_logging_project_bucket_config.vault_audit.project == var.project &&
+      google_logging_project_bucket_config.vault_audit.location == var.audit_log_location &&
+      google_logging_project_bucket_config.vault_audit.bucket_id == "vault-server-audit" &&
+      google_logging_project_bucket_config.vault_audit.retention_days == 365 &&
+      !google_logging_project_bucket_config.vault_audit.locked &&
+      google_logging_project_bucket_config.vault_audit.deletion_policy == "PREVENT"
+    )
+    error_message = "Vault audit entries must have a dedicated, retained, deletion-protected Logging bucket."
+  }
+
+  assert {
+    condition = (
+      google_logging_project_sink.vault_audit.destination == "logging.googleapis.com/projects/example-project/locations/us-central1/buckets/vault-server-audit" &&
+      !google_logging_project_sink.vault_audit.disabled &&
+      !google_logging_project_sink.vault_audit.unique_writer_identity &&
+      google_logging_project_sink.vault_audit.deletion_policy == "PREVENT" &&
+      strcontains(google_logging_project_sink.vault_audit.filter, "resource.type=\"cloud_run_revision\"") &&
+      strcontains(google_logging_project_sink.vault_audit.filter, "resource.labels.service_name=\"vault-server\"") &&
+      strcontains(google_logging_project_sink.vault_audit.filter, "LOG_ID(\"run.googleapis.com/stdout\")")
+    )
+    error_message = "The protected sink must route only the Vault runtime stdout stream to its same-project audit bucket."
+  }
+
+  assert {
+    condition = (
+      google_logging_log_view.vault_audit.bucket == "vault-server-audit" &&
+      google_logging_log_view.vault_audit.name == "vault-audit" &&
+      google_logging_log_view.vault_audit.deletion_policy == "PREVENT" &&
+      length(google_logging_log_view_iam_member.vault_audit) == 1 &&
+      google_logging_log_view_iam_member.vault_audit["group:vault-audit-reviewers@example.org"].role == "roles/logging.viewAccessor"
+    )
+    error_message = "Audit evidence access must be limited to explicit view-accessor members."
+  }
+
+  assert {
+    condition = (
+      google_monitoring_alert_policy.vault_audit_sink_error.enabled &&
+      google_monitoring_alert_policy.vault_audit_sink_error.severity == "CRITICAL" &&
+      toset(google_monitoring_alert_policy.vault_audit_sink_error.notification_channels) == var.audit_alert_notification_channels &&
+      google_monitoring_alert_policy.vault_audit_sink_error.conditions[0].condition_threshold[0].filter == local.audit_sink_error_metric_filter &&
+      google_monitoring_alert_policy.vault_audit_sink_error.conditions[0].condition_threshold[0].comparison == "COMPARISON_GT" &&
+      google_monitoring_alert_policy.vault_audit_sink_error.conditions[0].condition_threshold[0].threshold_value == 0 &&
+      google_monitoring_alert_policy.vault_audit_sink_error.conditions[0].condition_threshold[0].aggregations[0].alignment_period == "60s" &&
+      google_monitoring_alert_policy.vault_audit_sink_error.conditions[0].condition_threshold[0].aggregations[0].per_series_aligner == "ALIGN_SUM"
+    )
+    error_message = "A sink routing error must open a critical incident on the explicit audit paging channel."
+  }
+}
+
 run "rejects_unacknowledged_single_instance_preview" {
   command = plan
 
@@ -87,6 +144,46 @@ run "rejects_unacknowledged_single_instance_preview" {
   }
 
   expect_failures = [google_service_account.runtime]
+}
+
+run "rejects_missing_audit_viewer" {
+  command = plan
+
+  variables {
+    audit_log_viewer_members = []
+  }
+
+  expect_failures = [var.audit_log_viewer_members]
+}
+
+run "rejects_project_wide_audit_viewer_role" {
+  command = plan
+
+  variables {
+    audit_log_viewer_members = ["roles/logging.viewer"]
+  }
+
+  expect_failures = [var.audit_log_viewer_members]
+}
+
+run "rejects_missing_audit_paging_channel" {
+  command = plan
+
+  variables {
+    audit_alert_notification_channels = []
+  }
+
+  expect_failures = [var.audit_alert_notification_channels]
+}
+
+run "rejects_short_audit_retention" {
+  command = plan
+
+  variables {
+    audit_log_retention_days = 364
+  }
+
+  expect_failures = [var.audit_log_retention_days]
 }
 
 run "splits_runtime_initializer_and_proxy_privileges" {

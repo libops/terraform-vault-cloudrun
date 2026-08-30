@@ -186,6 +186,74 @@ variable "country" {
   }
 }
 
+variable "audit_log_retention_days" {
+  type        = number
+  description = "Retention period for the dedicated Vault audit log bucket. The minimum is 365 days; choose a longer period only from an approved customer or legal obligation."
+  default     = 365
+
+  validation {
+    condition = (
+      var.audit_log_retention_days >= 365 &&
+      var.audit_log_retention_days <= 3650 &&
+      floor(var.audit_log_retention_days) == var.audit_log_retention_days
+    )
+    error_message = "audit_log_retention_days must be a whole number from 365 through 3650."
+  }
+}
+
+variable "audit_log_location" {
+  type        = string
+  description = "Explicit supported Cloud Logging bucket location approved for the customer's audit evidence. This is intentionally independent from the Cloud Run region."
+
+  validation {
+    condition = (
+      trimspace(var.audit_log_location) == var.audit_log_location &&
+      can(regex("^[a-z][a-z0-9-]{1,62}$", var.audit_log_location))
+    )
+    error_message = "audit_log_location must be an explicit lowercase Cloud Logging location identifier."
+  }
+}
+
+variable "audit_log_bucket_locked" {
+  type        = bool
+  description = "Irreversibly lock the audit bucket retention policy. Leave false until the retention period has explicit business and Legal approval; locking is not reversible."
+  default     = false
+}
+
+variable "audit_log_viewer_members" {
+  type        = set(string)
+  description = "One or more explicit IAM principals granted roles/logging.viewAccessor on only the Vault audit log view. Review inherited project-level Logging access separately."
+
+  validation {
+    condition = (
+      length(var.audit_log_viewer_members) > 0 &&
+      alltrue([
+        for member in var.audit_log_viewer_members :
+        trimspace(member) == member &&
+        can(regex("^(group|user|serviceAccount):[^@[:space:]]+@[^@[:space:]]+$", member))
+      ])
+    )
+    error_message = "audit_log_viewer_members must contain at least one explicit group:, user:, or serviceAccount: email principal."
+  }
+}
+
+variable "audit_alert_notification_channels" {
+  type        = set(string)
+  description = "One or more existing Cloud Monitoring notification-channel resource names paged when the Vault audit sink reports a routing error."
+
+  validation {
+    condition = (
+      length(var.audit_alert_notification_channels) > 0 &&
+      alltrue([
+        for channel in var.audit_alert_notification_channels :
+        trimspace(channel) == channel &&
+        can(regex("^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/notificationChannels/[A-Za-z0-9_-]+$", channel))
+      ])
+    )
+    error_message = "audit_alert_notification_channels must contain at least one full projects/<project-id>/notificationChannels/<channel-id> resource name."
+  }
+}
+
 variable "data_bucket_name" {
   type        = string
   description = "Bucket name for Vault data storage. Defaults to a name derived from project and service name."

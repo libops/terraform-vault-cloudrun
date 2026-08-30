@@ -32,6 +32,25 @@ upgrade.
    31-character deterministic execution suffix. A longer custom pre-v1 job
    name must be replaced with a shorter one.
 
+6. Supply one or more explicit least-privilege audit viewers and existing
+   Monitoring notification channels:
+
+   ```hcl
+   audit_log_viewer_members = [
+     "group:vault-audit-reviewers@example.org",
+   ]
+   audit_log_location = "us-central1"
+   audit_alert_notification_channels = [
+     "projects/example-project/notificationChannels/vault-audit-oncall",
+   ]
+   ```
+
+   Select `audit_log_location` from supported Cloud Logging locations only
+   after confirming the customer and legal data-location requirement. Review
+   inherited project, folder, and organization Logging roles as a separate
+   access surface. The module does not create a notification channel because
+   its destination and responders are an operator decision.
+
 ## State and IAM changes
 
 The module includes this state migration:
@@ -60,6 +79,13 @@ and additions before approval.
 The old `gsa`, `key_bucket`, and `vault-url` outputs remain as deprecated
 aliases. New callers should use `runtime_service_account_email`,
 `recovery_bucket_name`, and `vault_url`.
+
+The upgrade also creates a dedicated, explicitly located Vault audit Logging bucket, an
+exact Vault-runtime audit sink, a least-privilege log view, and a critical
+sink-error alert. Retention defaults to 365 days and Terraform prevents deletion
+of the bucket, sink, view, and alert. Leave `audit_log_bucket_locked=false`
+until the exact retention obligation has named business and Legal approval;
+locking a Logging bucket retention policy is irreversible.
 
 ## Cloud Run changes
 
