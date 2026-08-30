@@ -48,6 +48,26 @@ output "initializer_execution_token" {
   description = "Deterministic 31-character run-to-completion token derived from the initializer-relevant deployment contract."
 }
 
+output "audit_log_bucket_name" {
+  value       = google_logging_project_bucket_config.vault_audit.name
+  description = "Full resource name of the protected Vault audit Logging bucket."
+}
+
+output "audit_log_view_name" {
+  value       = google_logging_log_view.vault_audit.name
+  description = "Name of the least-privilege Vault audit log view."
+}
+
+output "audit_sink_name" {
+  value       = google_logging_project_sink.vault_audit.name
+  description = "Name of the project sink routing Vault audit records into the protected bucket."
+}
+
+output "audit_sink_error_alert_name" {
+  value       = google_monitoring_alert_policy.vault_audit_sink_error.name
+  description = "Resource name of the critical Vault audit sink-error alert policy."
+}
+
 # Compatibility aliases retained for existing callers. Prefer the descriptive
 # underscore-separated outputs above in new configurations.
 output "vault-url" {

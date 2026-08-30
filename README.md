@@ -59,6 +59,8 @@ Enable these APIs in the target project before using the module:
 - Cloud Key Management Service API
 - Cloud Storage API
 - Identity and Access Management API
+- Cloud Logging API
+- Cloud Monitoring API
 
 Because Terraform creates and immediately executes the initializer, the
 applying identity also needs permission to run that Cloud Run job in addition
@@ -102,6 +104,14 @@ module "vault" {
   admin_emails = [
     "vault-admin@example.org",
   ]
+
+  audit_log_viewer_members = [
+    "group:vault-audit-reviewers@example.org",
+  ]
+  audit_log_location = "us-central1"
+  audit_alert_notification_channels = [
+    "projects/example-project/notificationChannels/vault-audit-oncall",
+  ]
 }
 ```
 
@@ -139,6 +149,13 @@ as privileged disaster-recovery/audit access. Assign recovery shares to
 independent custodians; bucket/KMS access alone is not a custody quorum. Do not
 copy decrypted material into Terraform, CI, logs, tickets, chat, or command
 arguments.
+
+The module routes only structured Vault API audit records to a dedicated,
+deletion-protected Cloud Logging bucket with at least 365 days of retention. A
+least-privilege log view has explicit readers, and a critical export-error alert
+pages the supplied notification channels when Cloud Logging reports a sink
+routing error. See [Vault audit evidence](VAULT_AUDIT_EVIDENCE.md) for the
+identity boundary, access review, outage drill, and evidence requirements.
 
 By default Vault returns five recovery shares to the initializer, which removes
 the initial root token, encrypts the recovery bundle with Google KMS, and stores
@@ -256,6 +273,11 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | [google_kms_crypto_key_iam_member.initializer](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key_iam_member) | resource |
 | [google_kms_crypto_key_iam_member.vault](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key_iam_member) | resource |
 | [google_kms_key_ring.vault-server](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_key_ring) | resource |
+| [google_logging_log_view.vault_audit](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_log_view) | resource |
+| [google_logging_log_view_iam_member.vault_audit](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_log_view_iam_member) | resource |
+| [google_logging_project_bucket_config.vault_audit](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_project_bucket_config) | resource |
+| [google_logging_project_sink.vault_audit](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_project_sink) | resource |
+| [google_monitoring_alert_policy.vault_audit_sink_error](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/monitoring_alert_policy) | resource |
 | [google_service_account.initializer](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
 | [google_service_account.proxy](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
 | [google_service_account.runtime](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
@@ -268,6 +290,11 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_admin_emails"></a> [admin\_emails](#input\_admin\_emails) | Explicit human or automation emails allowed to access protected Vault routes. The initializer service account is added automatically. | `list(string)` | n/a | yes |
+| <a name="input_audit_alert_notification_channels"></a> [audit\_alert\_notification\_channels](#input\_audit\_alert\_notification\_channels) | One or more existing Cloud Monitoring notification-channel resource names paged when the Vault audit sink reports a routing error. | `set(string)` | n/a | yes |
+| <a name="input_audit_log_bucket_locked"></a> [audit\_log\_bucket\_locked](#input\_audit\_log\_bucket\_locked) | Irreversibly lock the audit bucket retention policy. Leave false until the retention period has explicit business and Legal approval; locking is not reversible. | `bool` | `false` | no |
+| <a name="input_audit_log_location"></a> [audit\_log\_location](#input\_audit\_log\_location) | Explicit supported Cloud Logging bucket location approved for the customer's audit evidence. This is intentionally independent from the Cloud Run region. | `string` | n/a | yes |
+| <a name="input_audit_log_retention_days"></a> [audit\_log\_retention\_days](#input\_audit\_log\_retention\_days) | Retention period for the dedicated Vault audit log bucket. The minimum is 365 days; choose a longer period only from an approved customer or legal obligation. | `number` | `365` | no |
+| <a name="input_audit_log_viewer_members"></a> [audit\_log\_viewer\_members](#input\_audit\_log\_viewer\_members) | One or more explicit IAM principals granted roles/logging.viewAccessor on only the Vault audit log view. Review inherited project-level Logging access separately. | `set(string)` | n/a | yes |
 | <a name="input_country"></a> [country](#input\_country) | GCS location for the Vault data and recovery buckets. | `string` | `"us"` | no |
 | <a name="input_create_kms"></a> [create\_kms](#input\_create\_kms) | Whether to create the KMS key ring and crypto key. | `bool` | `true` | no |
 | <a name="input_data_bucket_name"></a> [data\_bucket\_name](#input\_data\_bucket\_name) | Bucket name for Vault data storage. Defaults to a name derived from project and service name. | `string` | `""` | no |
@@ -294,6 +321,10 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 
 | Name | Description |
 |------|-------------|
+| <a name="output_audit_log_bucket_name"></a> [audit\_log\_bucket\_name](#output\_audit\_log\_bucket\_name) | Full resource name of the protected Vault audit Logging bucket. |
+| <a name="output_audit_log_view_name"></a> [audit\_log\_view\_name](#output\_audit\_log\_view\_name) | Name of the least-privilege Vault audit log view. |
+| <a name="output_audit_sink_error_alert_name"></a> [audit\_sink\_error\_alert\_name](#output\_audit\_sink\_error\_alert\_name) | Resource name of the critical Vault audit sink-error alert policy. |
+| <a name="output_audit_sink_name"></a> [audit\_sink\_name](#output\_audit\_sink\_name) | Name of the project sink routing Vault audit records into the protected bucket. |
 | <a name="output_data_bucket_name"></a> [data\_bucket\_name](#output\_data\_bucket\_name) | Bucket containing the Vault GCS storage backend. |
 | <a name="output_gsa"></a> [gsa](#output\_gsa) | Deprecated compatibility alias for runtime\_service\_account\_email. |
 | <a name="output_initializer_execution_token"></a> [initializer\_execution\_token](#output\_initializer\_execution\_token) | Deterministic 31-character run-to-completion token derived from the initializer-relevant deployment contract. |
