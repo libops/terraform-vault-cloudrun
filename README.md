@@ -210,9 +210,10 @@ seal configuration from `KMS_KEY_RING` and `KMS_CRYPTO_KEY` at startup.
 Image pull requests build and scan both native architectures without publisher
 credentials. After the exact commit passes protected `main` CI, the shared
 LibOps workflow publishes, scans, signs, and verifies the same multi-platform
-manifest in GHCR and `us-docker.pkg.dev/libops-images/public`. Its unique tag
-records the upstream version, LibOps packaging revision, source commit, and
-workflow run. Deployments must still resolve and use the verified GAR digest.
+manifest as `vault-server:main` in GHCR and
+`us-docker.pkg.dev/libops-images/public`. The publisher records the exact
+source digest, signature, provenance, and workflow run as generated release
+evidence; callers do not maintain a LibOps image SHA pin by hand.
 
 Image payload pull requests and image-trust-only pull requests must retain
 `[skip-release]` in the title so they cannot cut a Terraform module release. A

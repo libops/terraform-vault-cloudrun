@@ -83,9 +83,6 @@ jobs:
       - name: Validate workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
-      - name: Validate Vault image contract
-        run: bash scripts/check-vault-image-contract.sh
-
   required:
     name: CI / required
     if: ${{ always() }}
