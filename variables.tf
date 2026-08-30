@@ -129,49 +129,49 @@ variable "recovery_pgp_keys" {
 
 variable "vault_image" {
   type        = string
-  description = "Digest-pinned GAR image reference for the Vault server container."
+  description = "Tagged GAR image reference for the Vault server container."
 
   validation {
     condition = (
       trimspace(var.vault_image) == var.vault_image &&
       can(regex(
-        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^@[:space:]]+@sha256:[0-9a-f]{64}$",
+        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^/@:[:space:]]+:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
         var.vault_image,
       ))
     )
-    error_message = "vault_image must be a GAR reference pinned to a sha256 digest."
+    error_message = "vault_image must be a tagged GAR image reference."
   }
 }
 
 variable "vault_proxy_image" {
   type        = string
-  description = "Digest-pinned GAR image reference for the Vault Proxy v2 container."
+  description = "Tagged GAR image reference for the Vault Proxy v2 container."
 
   validation {
     condition = (
       trimspace(var.vault_proxy_image) == var.vault_proxy_image &&
       can(regex(
-        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^@[:space:]]+@sha256:[0-9a-f]{64}$",
+        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^/@:[:space:]]+:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
         var.vault_proxy_image,
       ))
     )
-    error_message = "vault_proxy_image must be a GAR reference pinned to a sha256 digest."
+    error_message = "vault_proxy_image must be a tagged GAR image reference."
   }
 }
 
 variable "vault_init_image" {
   type        = string
-  description = "Digest-pinned GAR image reference for the Vault initializer container."
+  description = "Tagged GAR image reference for the Vault initializer container."
 
   validation {
     condition = (
       trimspace(var.vault_init_image) == var.vault_init_image &&
       can(regex(
-        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^@[:space:]]+@sha256:[0-9a-f]{64}$",
+        "^[a-z0-9-]+-docker\\.pkg\\.dev/[^/@[:space:]]+/[^/@[:space:]]+/[^/@:[:space:]]+:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
         var.vault_init_image,
       ))
     )
-    error_message = "vault_init_image must be a GAR reference pinned to a sha256 digest."
+    error_message = "vault_init_image must be a tagged GAR image reference."
   }
 }
 

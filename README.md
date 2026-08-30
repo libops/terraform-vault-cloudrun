@@ -64,16 +64,17 @@ Because Terraform creates and immediately executes the initializer, the
 applying identity also needs permission to run that Cloud Run job in addition
 to its resource-management permissions.
 
-The caller must supply three
+The caller must supply three tagged
 [Artifact Registry](https://cloud.google.com/artifact-registry/docs/docker/names)
-image references pinned by manifest digest:
+image references:
 
 - Vault server
 - Vault Proxy v2
 - Vault initializer
 
-The module intentionally has no mutable image defaults. Review and promote the
-three GAR digests together before changing a deployment.
+The module intentionally has no implicit image defaults. LibOps deployments use
+the publishers' managed `main` tags; signatures, SBOMs, provenance, and registry
+digests remain generated release evidence rather than hand-maintained inputs.
 
 The initializer job uses the `google-beta` provider only because Cloud Run's
 Terraform `run_execution_token` remains absent from the stable provider. Every
@@ -85,14 +86,14 @@ without introducing a credentialed `local-exec` or manual deployment step.
 
 ```hcl
 module "vault" {
-  source = "git::https://github.com/libops/terraform-vault-cloudrun.git?ref=1.0.0"
+  source = "git::https://github.com/libops/terraform-vault-cloudrun.git?ref=main"
 
   project = "example-project"
   region  = "us-central1"
 
-  vault_image = "us-docker.pkg.dev/example-project/public/vault@sha256:REVIEWED_DIGEST"
-  vault_proxy_image = "us-docker.pkg.dev/example-project/public/vault-proxy@sha256:REVIEWED_DIGEST"
-  vault_init_image  = "us-docker.pkg.dev/example-project/public/vault-init@sha256:REVIEWED_DIGEST"
+  vault_image       = "us-docker.pkg.dev/libops-images/public/vault-server:main"
+  vault_proxy_image = "us-docker.pkg.dev/libops-images/public/vault-proxy:main"
+  vault_init_image  = "us-docker.pkg.dev/libops-images/public/vault-init:main"
 
   # This module is intentionally blocked by default from being mistaken for
   # an HA production topology.
@@ -113,7 +114,7 @@ the deployment.
 The initializer has one task, parallelism one, three retries, and a ten-minute
 task timeout. `CHECK_INTERVAL=0s` makes every task a bounded one-shot attempt.
 Its 31-character `run_execution_token` is a deterministic SHA-256 prefix over
-the three image digests, service and identity settings, bucket and KMS IDs,
+the three image references, service and identity settings, bucket and KMS IDs,
 proxy policy, startup contract, and initializer job settings. A relevant
 deployment change therefore runs the idempotent initializer verification
 again and keeps the apply open until that execution succeeds. Provider create
@@ -189,8 +190,8 @@ and a hosted failover and recovery drill are promoted.
 
 The repository Dockerfile is a development-only way to exercise the included
 Vault configuration template. Terraform never builds it and it is not a
-default image source. Production callers must supply a reviewed,
-digest-pinned GAR image through `vault_image`.
+default image source. Production callers must supply the managed tagged GAR
+image through `vault_image`.
 
 ## Upgrade
 
@@ -203,9 +204,9 @@ before applying it to an existing Vault deployment.
 Terraform never builds or pushes images. The repository Dockerfile is the
 reviewed source for the independently released, multi-platform `vault-server`
 image. It checks out the exact upstream Vault 2.0.3 commit, rebuilds the
-UI-enabled target with a digest-pinned patched Go toolchain, and copies only the
-binary and license into a numeric non-root runtime. The entrypoint renders the
-seal configuration from `KMS_KEY_RING` and `KMS_CRYPTO_KEY` at startup.
+UI-enabled target with a Renovate-managed patched Go toolchain, and copies only
+the binary and license into a numeric non-root runtime. The entrypoint renders
+the seal configuration from `KMS_KEY_RING` and `KMS_CRYPTO_KEY` at startup.
 
 Image pull requests build and scan both native architectures without publisher
 credentials. After the exact commit passes protected `main` CI, the shared
@@ -285,9 +286,9 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 | <a name="input_recovery_pgp_keys"></a> [recovery\_pgp\_keys](#input\_recovery\_pgp\_keys) | Optional set of five distinct base64-encoded binary PGP public keys for independent recovery-share custodians. When omitted, Vault returns the shares to the initializer for KMS encryption and create-only GCS storage. | `list(string)` | `[]` | no |
 | <a name="input_region"></a> [region](#input\_region) | GCP region in which to deploy the Cloud Run service and initializer job. | `string` | `"us-east5"` | no |
 | <a name="input_single_instance_preview_acknowledged"></a> [single\_instance\_preview\_acknowledged](#input\_single\_instance\_preview\_acknowledged) | Required explicit acknowledgement that this module is a single-serving-instance preview, not an HA Vault topology. Set true only for an approved limited deployment; this is not risk acceptance or production evidence. | `bool` | n/a | yes |
-| <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Digest-pinned GAR image reference for the Vault server container. | `string` | n/a | yes |
-| <a name="input_vault_init_image"></a> [vault\_init\_image](#input\_vault\_init\_image) | Digest-pinned GAR image reference for the Vault initializer container. | `string` | n/a | yes |
-| <a name="input_vault_proxy_image"></a> [vault\_proxy\_image](#input\_vault\_proxy\_image) | Digest-pinned GAR image reference for the Vault Proxy v2 container. | `string` | n/a | yes |
+| <a name="input_vault_image"></a> [vault\_image](#input\_vault\_image) | Tagged GAR image reference for the Vault server container. | `string` | n/a | yes |
+| <a name="input_vault_init_image"></a> [vault\_init\_image](#input\_vault\_init\_image) | Tagged GAR image reference for the Vault initializer container. | `string` | n/a | yes |
+| <a name="input_vault_proxy_image"></a> [vault\_proxy\_image](#input\_vault\_proxy\_image) | Tagged GAR image reference for the Vault Proxy v2 container. | `string` | n/a | yes |
 
 ## Outputs
 

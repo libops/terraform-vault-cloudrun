@@ -6,12 +6,12 @@ upgrade.
 
 ## Required configuration changes
 
-1. Supply all three GAR images by digest:
+1. Supply all three managed GAR image tags:
 
    ```hcl
-   vault_image       = "us-docker.pkg.dev/PROJECT/REPOSITORY/vault@sha256:DIGEST"
-   vault_proxy_image = "us-docker.pkg.dev/PROJECT/REPOSITORY/vault-proxy@sha256:DIGEST"
-   vault_init_image  = "us-docker.pkg.dev/PROJECT/REPOSITORY/vault-init@sha256:DIGEST"
+   vault_image       = "us-docker.pkg.dev/libops-images/public/vault-server:main"
+   vault_proxy_image = "us-docker.pkg.dev/libops-images/public/vault-proxy:main"
+   vault_init_image  = "us-docker.pkg.dev/libops-images/public/vault-init:main"
    ```
 
    The old mutable `init_image` default and hard-coded proxy image are removed.
