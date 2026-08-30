@@ -12,57 +12,13 @@ permissions:
   pull-requests: read
 
 jobs:
-  classify:
-    name: Classify merged change
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      release-module: ${{ steps.change.outputs.release-module }}
-    steps:
-      - name: Keep image changes out of module releases
-        id: change
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          set -euo pipefail
-          release_module=true
-          if [[ "$PR_TITLE" == *"[skip-release]"* ]]; then
-            release_module=false
-          elif [[ "$PR_TITLE" != *"[major]"* &&
-                  "$PR_TITLE" != *"[minor]"* &&
-                  "$PR_TITLE" != *"[patch]"* ]]; then
-            image_or_trust_changed=false
-            other_changed=false
-            changed_files="$(
-              gh api --paginate \
-                "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-                --jq '.[] | .filename, (.previous_filename // empty)'
-            )"
-            while IFS= read -r changed_file; do
-              case "$changed_file" in
-                Dockerfile|docker-entrypoint.sh|vault-server.hcl.tmpl|scripts/check-vault-image-contract.sh|.github/workflows/lint-test.yml|.github/workflows/release.yml|.github/workflows/vault-image.yml)
-                  image_or_trust_changed=true
-                  ;;
-                README.md)
-                  ;;
-                *)
-                  other_changed=true
-                  ;;
-              esac
-            done <<< "$changed_files"
-            if [[ "$image_or_trust_changed" == true && "$other_changed" == false ]]; then
-              release_module=false
-            fi
-          fi
-          echo "release-module=$release_module" >> "$GITHUB_OUTPUT"
-
   release:
-    needs: classify
-    if: needs.classify.outputs.release-module == 'true'
-    uses: libops/.github/.github/workflows/bump-release.yaml@e1e30b58c9c566f72b22f03e637cd5218d635727
+    if: >-
+      github.event.pull_request.merged == true &&
+      (contains(github.event.pull_request.title, '[major]') ||
+      contains(github.event.pull_request.title, '[minor]') ||
+      contains(github.event.pull_request.title, '[patch]'))
+    uses: libops/.github/.github/workflows/bump-release.yaml@main
     permissions:
       contents: write
       actions: write
