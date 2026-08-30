@@ -244,8 +244,8 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_vault"></a> [vault](#module\_vault) | https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62 | n/a |
-| <a name="module_vault_proxy"></a> [vault\_proxy](#module\_vault\_proxy) | https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62 | n/a |
+| <a name="module_vault"></a> [vault](#module\_vault) | https://github.com/libops/terraform-cloudrun-v2/archive/refs/heads/main.zip//terraform-cloudrun-v2-main | n/a |
+| <a name="module_vault_proxy"></a> [vault\_proxy](#module\_vault\_proxy) | https://github.com/libops/terraform-cloudrun-v2/archive/refs/heads/main.zip//terraform-cloudrun-v2-main | n/a |
 
 ## Resources
 

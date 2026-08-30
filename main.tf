@@ -363,7 +363,7 @@ resource "google_kms_crypto_key_iam_member" "initializer" {
 }
 
 module "vault" {
-  source = "https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62"
+  source = "https://github.com/libops/terraform-cloudrun-v2/archive/refs/heads/main.zip//terraform-cloudrun-v2-main"
 
   name                = local.service_name
   project             = var.project
@@ -385,7 +385,7 @@ module "vault" {
 }
 
 module "vault_proxy" {
-  source = "https://github.com/libops/terraform-cloudrun-v2/archive/4b1c2551369ec6f31372edb33721c80daeeeab62.zip//terraform-cloudrun-v2-4b1c2551369ec6f31372edb33721c80daeeeab62"
+  source = "https://github.com/libops/terraform-cloudrun-v2/archive/refs/heads/main.zip//terraform-cloudrun-v2-main"
 
   name                = local.proxy_service_name
   project             = var.project
