@@ -237,8 +237,8 @@ synchronized with the Vault image workflow and shared WIF allowlist.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | 7.46.0 |
-| <a name="provider_google-beta"></a> [google-beta](#provider\_google-beta) | 7.46.0 |
+| <a name="provider_google"></a> [google](#provider\_google) | ~> 7.22 |
+| <a name="provider_google-beta"></a> [google-beta](#provider\_google-beta) | ~> 7.22 |
 
 ## Modules
 
