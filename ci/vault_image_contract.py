@@ -14,10 +14,19 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def main() -> None:
-    if len(sys.argv) != 2:
-        raise RuntimeError("usage: vault_image_contract.py IMAGE")
-    image = sys.argv[1]
+def require_dependency(build_info: str, module: str, version: str) -> None:
+    dependencies = {}
+    for line in build_info.splitlines():
+        fields = line.split("\t")
+        if len(fields) >= 4 and fields[1] == "dep":
+            dependencies[fields[2]] = fields[3]
+    require(
+        dependencies.get(module) == version,
+        f"Vault binary dependency {module} is {dependencies.get(module)!r}, want {version!r}",
+    )
+
+
+def validate(image: str) -> str:
 
     version = run(
         "docker",
@@ -43,6 +52,17 @@ def main() -> None:
         f"Vault v{match.group(1)}" in reported_version,
         "Vault binary and image label versions differ",
     )
+
+    build_info = run(
+        "docker",
+        "run",
+        "--rm",
+        "--entrypoint",
+        "/bin/cat",
+        image,
+        "/licenses/Vault-buildinfo",
+    ).stdout
+    require_dependency(build_info, "golang.org/x/crypto", "v0.55.0")
 
     uid = run(
         "docker", "run", "--rm", "--entrypoint", "/bin/sh", image, "-c", "id -u"
@@ -84,6 +104,14 @@ def main() -> None:
             f"invalid KMS key ring was accepted: {key_ring!r}",
         )
 
+    return version
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise RuntimeError("usage: vault_image_contract.py IMAGE")
+    image = sys.argv[1]
+    version = validate(image)
     print(f"validated {image} as Vault {version}")
 
 

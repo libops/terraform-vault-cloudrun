@@ -12,6 +12,7 @@ on:
       - docker-entrypoint.sh
       - vault-server.hcl.tmpl
       - ci/vault_image_contract.py
+      - ci/test_vault_image_contract.py
       - .github/workflows/lint-test.yml
       - .github/workflows/release.yml
       - .github/workflows/vault-image.yml
