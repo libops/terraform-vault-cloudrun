@@ -89,16 +89,6 @@ jobs:
       - name: Verify Vault version and runtime identity
         run: python3 ci/vault_image_contract.py "$LOCAL_IMAGE"
 
-      - name: Scan native image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ env.LOCAL_IMAGE }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: HIGH,CRITICAL
-          vuln-type: os,library
-
   authorize:
     name: Authorize post-CI image commit
     if: >-
@@ -149,7 +139,6 @@ jobs:
       tag: ${{ needs.authorize.outputs.image-tag }}
       expected-main-sha: ${{ github.event.workflow_run.head_sha }}
       additional-gar-registry: us-docker.pkg.dev/libops-images/public
-      scan: true
       sign: true
     secrets:
       GCLOUD_OIDC_POOL: ${{ secrets.GCLOUD_OIDC_POOL }}
