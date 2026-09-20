@@ -34,7 +34,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.1"
 
       - name: Install terraform-docs
         run: go install github.com/terraform-docs/terraform-docs@v0.20.0
@@ -57,7 +57,7 @@ jobs:
       - name: Set up TFLint
         uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6
         with:
-          tflint_version: v0.63.1
+          tflint_version: v0.64.0
 
       - name: Lint Terraform
         run: |
@@ -78,7 +78,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.1"
 
       - name: Validate workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
