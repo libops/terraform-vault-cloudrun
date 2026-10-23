@@ -1,4 +1,4 @@
-FROM golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS builder
+FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS builder
 
 ARG TARGETARCH
 ARG VAULT_VERSION=2.0.4
@@ -23,7 +23,7 @@ RUN set -eux; \
     go version -m /out/vault | tee /out/vault-buildinfo; \
     grep -F "$(printf '\tdep\tgolang.org/x/crypto\tv%s\t' "${VAULT_X_CRYPTO_VERSION}")" /out/vault-buildinfo
 
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 ARG VAULT_VERSION=2.0.4
 ARG IMAGE_REVISION=2
